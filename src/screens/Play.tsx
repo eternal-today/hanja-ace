@@ -6,7 +6,8 @@ import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
 import { actions, balanceOf, getState, useStore } from '../engine/store';
 import { answerText, chooseType, freeHints, hintLines, makeQuestion, planRound, poolChars, questionText, wordsFor } from '../engine/quiz';
 import { Tone, applyAnswer, toneOf } from '../engine/srs';
-import { fireConfetti, speak, toast } from '../components/ui';
+import { fireConfetti, speak, tap, toast } from '../components/ui';
+import { SavedRound, clearRound, saveRound } from '../engine/resume';
 
 const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', check: '실력 확인' };
 
@@ -32,41 +33,75 @@ function buildRound(kind: RoundKind) {
   return { plan, questions, allowed, tonesBefore, free };
 }
 
+/** 저장해 둔 판을 그대로 되살림 */
+function restoreRound(r: SavedRound) {
+  return {
+    plan: { targets: r.questions.map(x => x.c), newChars: r.newChars, dueCount: r.dueCount },
+    questions: r.questions, allowed: new Set(r.allowed), tonesBefore: r.tonesBefore, free: r.free,
+  };
+}
+
+/** 잘못 눌림 방지: 문제가 바뀌거나 조각을 누른 직후 이 시간(ms) 동안은 답이 제출되지 않음 */
+const GUARD_MS = 400;
+
 interface Props {
   kind: RoundKind;
   onExit: () => void;
   onAgain: () => void;
   onMilestone: (stars: number) => void;
   onOpenShop: () => void;
+  resume?: SavedRound | null;                              // 이어서 풀기
+  backRef: React.MutableRefObject<null | (() => void)>;    // 기기의 뒤로가기가 눌렸을 때 부를 동작
 }
 
-export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }: Props) {
+export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, resume, backRef }: Props) {
   const store = useStore();
   const { config } = store;
   const balance = balanceOf(store);
-  const [round] = useState(() => buildRound(kind));
+  const [round] = useState(() => (resume ? restoreRound(resume) : buildRound(kind)));
   const { questions, plan, allowed, tonesBefore } = round;
 
-  const [phase, setPhase] = useState<'intro' | 'solving' | 'result'>(plan.newChars.length ? 'intro' : 'solving');
+  const [phase, setPhase] = useState<'intro' | 'solving' | 'result'>(!resume && plan.newChars.length ? 'intro' : 'solving');
   const [introIdx, setIntroIdx] = useState(0);
-  const [idx, setIdx] = useState(0);
+  const [idx, setIdx] = useState(resume ? resume.items.length : 0);
   const [picked, setPicked] = useState<string | null>(null);
   const [built, setBuilt] = useState<number[]>([]);       // 조립형: 고른 조각 번호
   const [hint, setHint] = useState<string[] | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
-  const [freeUsed, setFreeUsed] = useState(0);
-  const [paidUsed, setPaidUsed] = useState(0);
+  const [freeUsed, setFreeUsed] = useState(resume?.freeUsed || 0);
+  const [paidUsed, setPaidUsed] = useState(resume?.paidUsed || 0);
+  const [askQuit, setAskQuit] = useState(false);
   const [askPaid, setAskPaid] = useState(false);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
-  const [items, setItems] = useState<RoundItem[]>([]);
+  const [combo, setCombo] = useState(resume?.combo || 0);
+  const [maxCombo, setMaxCombo] = useState(resume?.maxCombo || 0);
+  const [items, setItems] = useState<RoundItem[]>(resume?.items || []);
   const [record, setRecord] = useState<RoundRecord | null>(null);
   const [feedback, setFeedback] = useState('');
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const readyAt = useRef(0);   // 이 시각 전에는 답을 받지 않음
+  const tileAt = useRef(0);    // 마지막으로 조각을 누른 시각
+  useEffect(() => { readyAt.current = Date.now() + GUARD_MS; }, [idx, phase]);
+
+  // 풀 때마다 자동 저장 (앱이 닫혀도 이어서 풀 수 있게)
+  useEffect(() => {
+    if (phase !== 'solving' || !questions.length) return;
+    saveRound({
+      ts: Date.now(), kind, questions, newChars: plan.newChars, dueCount: plan.dueCount, allowed: [...allowed],
+      tonesBefore, free: round.free, items, freeUsed, paidUsed, combo, maxCombo,
+    });
+  }, [phase, items, freeUsed, paidUsed]);
+
+  // 기기의 뒤로가기: 풀이 중이면 확인창, 아니면 홈으로
+  useEffect(() => {
+    backRef.current = () => { if (phase === 'solving') setAskQuit(v => !v); else onExit(); };
+    return () => { backRef.current = null; };
+  });
 
   const q = questions[idx];
+  const builtText = q?.tiles ? built.map(i => q.tiles![i]).join('') : '';
+  const needLen = q?.assemble ? Array.from(q.answer).length : 0;
   const answered = picked !== null;
   const lastOk = answered && items[idx]?.ok;
   const freeLeft = round.free - freeUsed;
@@ -106,6 +141,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
       ts: Date.now(), date: new Date().toLocaleDateString('ko-KR'), kind, correct, total, stars,
       hintsFree: freeUsed, hintsPaid: paidUsed, groupNames, items: finalItems,
     };
+    clearRound();
     const hit = actions.addRecord(rec);
     setRecord(rec);
     setPhase('result');
@@ -141,7 +177,8 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
   };
 
   const answer = (value: string) => {
-    if (answered) return;
+    if (answered || Date.now() < readyAt.current) return;
+    readyAt.current = Date.now() + GUARD_MS;
     const ok = value === q.answer;
     const hinted = hint !== null;
     const cards = { ...getState().cards };
@@ -177,12 +214,22 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
     setAskPaid(true);
   };
 
-  const leave = () => {
-    if (phase === 'solving' && items.length > 0) {
-      if (kind === 'check') { finish(items); return; }
-      if (!window.confirm('지금 나가면 이번 판의 별을 받지 못해요. 나갈까요?')) return;
-    }
+  /** 화면의 홈 버튼: 풀이 중이면 뒤로가기와 같은 확인창을 거침 */
+  const leave = () => { if (phase === 'solving') setAskQuit(true); else onExit(); };
+  const quit = () => {
+    setAskQuit(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (items.length === 0) clearRound();   // 한 문제도 안 풀었으면 남기지 않음
     onExit();
+  };
+  const pressTile = (i: number) => {
+    if (answered || built.includes(i) || built.length >= needLen) return;
+    tileAt.current = Date.now();
+    setBuilt([...built, i]);
+  };
+  const submitBuilt = () => {
+    if (built.length !== needLen || Date.now() - tileAt.current < GUARD_MS) return;
+    answer(builtText);
   };
 
   // ════════ 새 글자 미리 보기 ════════
@@ -332,13 +379,12 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
   }
 
   // ════════ 문제 풀기 ════════
+  if (!q) return null;
   const h = HANJA[q.c];
   const caption = q.type === 'hun' ? '이 한자의 뜻과 소리는?'
     : q.type === 'pick' ? '알맞은 한자를 골라요'
       : q.type === 'listen' ? '잘 듣고 알맞은 한자를 골라요'
         : '색칠된 낱말은 어떻게 읽을까요?';
-  const builtText = built.map(i => q.tiles![i]).join('');
-  const needLen = q.assemble ? Array.from(q.answer).length : 0;
 
   return (
     <div className="flex flex-col h-full max-w-2xl landscape:max-w-6xl mx-auto w-full">
@@ -410,7 +456,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
                       <div className="flex items-center justify-center gap-2 min-h-[4rem]">
                         {Array.from({ length: needLen }).map((_, i) => (
                           <button key={i} disabled={answered || built[i] === undefined}
-                            onClick={() => setBuilt(built.filter((_, k) => k !== i))}
+                            {...tap(() => { if (!answered && built[i] !== undefined) setBuilt(built.filter((_, k) => k !== i)); })}
                             className={`w-14 h-16 rounded-2xl border-b-4 text-3xl font-black font-display flex items-center justify-center ${
                               answered ? (lastOk ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-rose-500 bg-rose-50 text-rose-600')
                                 : built[i] !== undefined ? 'border-brand-400 bg-brand-50 text-brand-800' : 'border-slate-200 bg-slate-50 text-slate-300'}`}>
@@ -460,18 +506,18 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
                   const used = built.includes(i);
                   return (
                     <button key={i} disabled={answered || used || built.length >= needLen}
-                      onClick={() => setBuilt([...built, i])}
-                      className={`rounded-2xl border-2 py-4 text-2xl font-black font-display transition-all active:scale-90 ${used ? 'bg-slate-100 border-slate-100 text-slate-300' : 'bg-white border-slate-200 text-slate-800 shadow-sm'}`}>
+                      {...tap(() => pressTile(i))}
+                      className={`rounded-2xl border-2 py-4 text-2xl font-black font-display transition-colors select-none ${used ? 'bg-slate-100 border-slate-100 text-slate-300' : 'bg-white border-slate-200 text-slate-800 shadow-sm active:bg-brand-100 active:border-brand-300'}`}>
                       {t}
                     </button>
                   );
                 })}
               </div>
               {!answered && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-4 pt-4 border-t-2 border-dashed border-slate-200">
                   <button className="btn-secondary shrink-0 px-4 py-3.5" aria-label="지우기" onClick={() => setBuilt(built.slice(0, -1))} disabled={!built.length}><Delete size={20} /></button>
                   <button className="btn-primary flex-1 py-3.5 text-lg flex items-center justify-center gap-2"
-                    disabled={built.length !== needLen} onClick={() => answer(builtText)}>
+                    disabled={built.length !== needLen} onClick={submitBuilt}>
                     <span>정답 확인</span><ArrowRight size={22} />
                   </button>
                 </div>
@@ -487,10 +533,10 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
                   ? isAns ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
                     : isPicked ? 'bg-rose-50 border-rose-400 text-rose-600' : 'bg-white border-slate-100 text-slate-300'
                   : gone ? 'bg-slate-50 border-slate-100 text-slate-200'
-                    : 'bg-white border-slate-200 text-slate-800 shadow-sm active:scale-95 active:bg-brand-50 active:border-brand-300';
+                    : 'bg-white border-slate-200 text-slate-800 shadow-sm active:bg-brand-100 active:border-brand-400';
                 return (
-                  <button key={o.key} disabled={answered || gone} onClick={() => answer(o.key)}
-                    className={`relative rounded-3xl border-2 transition-all flex items-center justify-center ${o.isHanja ? 'hanja text-[clamp(3rem,13vmin,5rem)] py-4 landscape:py-6' : 'text-[clamp(1.15rem,4.6vmin,1.75rem)] font-black py-5 landscape:py-7 px-2'} ${tone}`}>
+                  <button key={o.key} disabled={answered || gone} {...tap(() => { if (!gone) answer(o.key); })}
+                    className={`relative rounded-3xl border-2 transition-colors select-none flex items-center justify-center ${o.isHanja ? 'hanja text-[clamp(3rem,13vmin,5rem)] py-4 landscape:py-6' : 'text-[clamp(1.15rem,4.6vmin,1.75rem)] font-black py-5 landscape:py-7 px-2'} ${tone}`}>
                     {o.label}
                     {answered && isAns && <CheckCircle2 size={22} className="absolute top-2 right-2 text-emerald-500" />}
                     {answered && isPicked && !isAns && <XCircle size={22} className="absolute top-2 right-2 text-rose-500" />}
@@ -502,7 +548,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
 
           {!answered && kind !== 'check' && (
             <button onClick={pressHint} disabled={!!hint}
-              className="btn-secondary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-40">
+              className="btn-secondary w-full py-3 mt-3 flex items-center justify-center gap-2 disabled:opacity-40">
               <Lightbulb size={20} className="text-amber-500" />
               <span className="text-sm">힌트</span>
               {freeLeft > 0
@@ -513,15 +559,36 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop }:
             </button>
           )}
           {!answered && kind === 'check' && (
-            <button onClick={leave} className="btn-secondary w-full py-3 text-sm">여기까지만 할래요</button>
+            <button onClick={() => (items.length ? finish(items) : quit())} className="btn-secondary w-full py-3 mt-3 text-sm">여기까지만 할래요</button>
           )}
           {answered && !lastOk && (
-            <button className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-2" onClick={() => goNext(items)}>
+            <button className="btn-primary w-full py-4 mt-3 text-lg flex items-center justify-center gap-2" onClick={() => { if (Date.now() >= readyAt.current) goNext(items); }}>
               <span>알겠어요</span><ArrowRight size={22} />
             </button>
           )}
         </div>
       </div>
+
+      {/* 그만둘지 확인 (홈 버튼, 기기의 뒤로가기) */}
+      <AnimatePresence>
+        {askQuit && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setAskQuit(false)}>
+            <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8, opacity: 0 }} onClick={e => e.stopPropagation()}
+              className="bg-white rounded-[2rem] p-7 max-w-xs w-full text-center shadow-2xl space-y-4">
+              <div className="text-5xl">🚪</div>
+              <h3 className="text-xl font-black text-slate-900 font-display">풀이를 그만둘까요?</h3>
+              <p className="text-sm font-bold text-slate-500 break-keep">
+                {items.length > 0 ? '지금까지 푼 문제는 저장돼요. 홈에서 이어서 풀 수 있어요.' : '아직 푼 문제가 없어요.'}
+              </p>
+              <div className="flex gap-2">
+                <button className="btn-secondary flex-1 py-3" onClick={quit}>그만두기</button>
+                <button className="btn-primary flex-1 py-3" onClick={() => setAskQuit(false)}>계속 풀기</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 별을 쓰는 힌트 확인 */}
       <AnimatePresence>

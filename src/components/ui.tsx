@@ -26,6 +26,18 @@ export function fireConfetti(intensity: 'normal' | 'big' | 'epic' = 'normal') {
   }
 }
 
+/**
+ * 손가락이 닿는 순간 반응하는 버튼 속성 (손을 뗄 때가 아니라 닿을 때).
+ * 빠르게 연달아 눌러도 빠지지 않고, 가장자리를 눌러도 빗나가지 않음.
+ * 키보드(Enter·Space)로 누른 경우는 onClick으로 받음.
+ */
+export function tap(fn: () => void) {
+  return {
+    onPointerDown: (e: React.PointerEvent) => { if (e.pointerType === 'mouse' && e.button !== 0) return; fn(); },
+    onClick: (e: React.MouseEvent) => { if (e.detail === 0) fn(); },
+  };
+}
+
 /** 한국어로 읽어 주기 (기기에 음성이 없으면 조용히 넘어감) */
 export function speak(text: string) {
   if (!canSpeak()) return;
@@ -129,11 +141,11 @@ export function Overlays({ pin }: { pin: string }) {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                  <button key={n} className="h-13 py-3 bg-slate-50 hover:bg-slate-100 rounded-2xl text-xl font-black text-slate-700 transition-colors active:scale-90" onClick={() => press(n)}>{n}</button>
+                  <button key={n} className="py-3 bg-slate-50 rounded-2xl text-xl font-black text-slate-700 transition-colors active:bg-trust-100 select-none" {...tap(() => press(n))}>{n}</button>
                 ))}
                 <button className="py-3 flex items-center justify-center text-slate-300 hover:text-slate-500" aria-label="닫기" onClick={() => { setPinReq(null); setBuffer(''); }}><X size={24} /></button>
-                <button className="py-3 bg-slate-50 hover:bg-slate-100 rounded-2xl text-xl font-black text-slate-700 transition-colors active:scale-90" onClick={() => press(0)}>0</button>
-                <button className="py-3 flex items-center justify-center text-slate-300 hover:text-slate-500" aria-label="지우기" onClick={() => setBuffer(buffer.slice(0, -1))}><Delete size={20} /></button>
+                <button className="py-3 bg-slate-50 rounded-2xl text-xl font-black text-slate-700 transition-colors active:bg-trust-100 select-none" {...tap(() => press(0))}>0</button>
+                <button className="py-3 flex items-center justify-center text-slate-300 hover:text-slate-500" aria-label="지우기" {...tap(() => setBuffer(b => b.slice(0, -1)))}><Delete size={20} /></button>
               </div>
               {error && <div className="text-rose-500 mt-4 text-sm font-bold">PIN 번호가 올바르지 않습니다.</div>}
             </motion.div>

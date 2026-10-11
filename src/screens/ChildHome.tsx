@@ -1,26 +1,31 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { BookOpen, ChevronRight, Ear, Gift, Home, Languages, Search, Sparkles, Star, Type } from 'lucide-react';
+import { BookOpen, ChevronRight, Ear, Gift, Home, Languages, PlayCircle, Search, Sparkles, Star, Type } from 'lucide-react';
 import { RoundKind } from '../types';
 import { STAGES, charsOfStage } from '../data';
 import { activeCoupons, balanceOf, useStore } from '../engine/store';
 import { canSpeak, poolStatus } from '../engine/quiz';
 import { toneOf } from '../engine/srs';
+import { loadRound } from '../engine/resume';
+
+const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', check: '실력 확인' };
 
 interface Props {
   onHome: () => void;
   onStart: (kind: RoundKind) => void;
+  onResume: () => void;
   onDogam: () => void;
   onShop: () => void;
 }
 
-export default function ChildHome({ onHome, onStart, onDogam, onShop }: Props) {
+export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }: Props) {
   const store = useStore();
   const { config, cards } = store;
   const balance = balanceOf(store);
   const status = poolStatus(config, cards);
   const coupons = activeCoupons(store);
   const name = config.childName?.trim();
+  const saved = loadRound();   // 풀다 멈춘 판
 
   // 도감 요약: 글자를 하나라도 만난 단계 + 지금 공부하는 단계
   const activeStages = STAGES.filter(st => config.groupIds.some(id => id.startsWith(st + '-')) || charsOfStage(st).some(c => cards[c]));
@@ -73,6 +78,18 @@ export default function ChildHome({ onHome, onStart, onDogam, onShop }: Props) {
             <h2 className="text-3xl font-black text-slate-900 font-display">{name ? `안녕, ${name}!` : '안녕, 한자 에이스!'}</h2>
             <p className="text-slate-500 font-medium">오늘은 어떤 한자를 만나 볼까?</p>
           </div>
+
+          {saved && (
+            <motion.button whileTap={{ scale: 0.97 }} onClick={onResume}
+              className="w-full bg-emerald-50 border-2 border-emerald-300 rounded-3xl p-4 flex items-center gap-4 text-left">
+              <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shrink-0"><PlayCircle size={26} /></div>
+              <div className="flex-1 min-w-0">
+                <div className="font-black text-emerald-800">이어서 풀기</div>
+                <div className="text-xs font-bold text-emerald-600">{KIND_NAME[saved.kind]} · {saved.questions.length}문제 중 {saved.items.length + 1}번 문제부터</div>
+              </div>
+              <ChevronRight size={18} className="text-emerald-400 shrink-0" />
+            </motion.button>
+          )}
 
           <motion.button whileTap={{ scale: 0.97 }} onClick={() => onStart('daily')}
             className="w-full bg-gradient-to-br from-brand-500 to-brand-700 p-7 landscape:p-6 rounded-[2rem] shadow-xl shadow-brand-200 flex items-center gap-5 text-left">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Baby, ChevronRight, User } from 'lucide-react';
 import { RoundKind } from './types';
@@ -9,6 +9,7 @@ import Play from './screens/Play';
 import Dogam from './screens/Dogam';
 import Shop from './screens/Shop';
 import Parent from './screens/Parent';
+import { SavedRound, loadRound } from './engine/resume';
 
 type ChildView = 'home' | 'play' | 'dogam' | 'shop';
 
@@ -19,6 +20,34 @@ export default function App() {
   const [kind, setKind] = useState<RoundKind>('daily');
   const [roundKey, setRoundKey] = useState(0);
   const [milestone, setMilestone] = useState<number | null>(null);
+  const [resume, setResume] = useState<SavedRound | null>(null);
+  const playBackRef = useRef<null | (() => void)>(null);
+
+  // ── 기기의 뒤로가기 ──
+  // 첫 화면을 벗어나면 기록에 "받침" 한 칸을 넣어 두고, 뒤로가기가 눌리면 앱을 떠나지 않고
+  // 풀이 중 → 확인창 / 도감·가게 → 아이 홈 / 아이 홈·부모 화면 → 첫 화면으로 보냄
+  const nav = useRef({ screen, view });
+  nav.current = { screen, view };
+  const guard = useRef(false);
+  useEffect(() => {
+    const onPop = () => {
+      guard.current = false;
+      const cur = nav.current;
+      if (cur.screen === 'landing') return;                 // 첫 화면에서는 평소처럼 나감
+      history.pushState({ hanja: 1 }, '');                   // 받침을 다시 깔아 둠
+      guard.current = true;
+      if (cur.screen === 'parent') setScreen('landing');
+      else if (cur.view === 'play') { if (playBackRef.current) playBackRef.current(); else setView('home'); }
+      else if (cur.view === 'home') setScreen('landing');
+      else setView('home');
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  useEffect(() => {
+    if (screen !== 'landing' && !guard.current) { history.pushState({ hanja: 1 }, ''); guard.current = true; }
+    else if (screen === 'landing' && guard.current) { guard.current = false; history.back(); }   // 남은 받침 치우기
+  }, [screen]);
   const name = store.config.childName?.trim();
 
   useEffect(() => {
@@ -26,7 +55,12 @@ export default function App() {
     if (fallback) fallback.style.display = 'none';
   }, []);
 
-  const start = (k: RoundKind) => { setKind(k); setRoundKey(n => n + 1); setView('play'); };
+  const start = (k: RoundKind) => { setResume(null); setKind(k); setRoundKey(n => n + 1); setView('play'); };
+  const resumeRound = () => {
+    const saved = loadRound();
+    if (!saved) { setView('home'); return; }
+    setResume(saved); setKind(saved.kind); setRoundKey(n => n + 1); setView('play');
+  };
   const badge = milestone ? BADGES.find(b => b.need === milestone) : null;
 
   return (
@@ -87,9 +121,9 @@ export default function App() {
         {screen === 'child' && (
           <motion.div key="child" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="h-[100dvh] bg-gradient-to-b from-brand-50 to-white flex flex-col overflow-hidden">
-            {view === 'home' && <ChildHome onHome={() => setScreen('landing')} onStart={start} onDogam={() => setView('dogam')} onShop={() => setView('shop')} />}
+            {view === 'home' && <ChildHome onHome={() => setScreen('landing')} onStart={start} onResume={resumeRound} onDogam={() => setView('dogam')} onShop={() => setView('shop')} />}
             {view === 'play' && (
-              <Play key={roundKey} kind={kind} onExit={() => setView('home')} onAgain={() => start(kind)}
+              <Play key={roundKey} kind={kind} resume={resume} backRef={playBackRef} onExit={() => setView('home')} onAgain={() => start(kind)}
                 onMilestone={m => { setMilestone(m); fireConfetti(m % 50 === 0 ? 'epic' : 'normal'); }} onOpenShop={() => setView('shop')} />
             )}
             {view === 'dogam' && <Dogam onBack={() => setView('home')} />}
