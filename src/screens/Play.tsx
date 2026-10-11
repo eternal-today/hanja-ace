@@ -573,15 +573,6 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                   );
                 })}
               </div>
-              {!answered && (
-                <div className="flex gap-2 mt-4 pt-4 border-t-2 border-dashed border-slate-200">
-                  <button className="btn-secondary shrink-0 px-4 py-3.5" aria-label="지우기" onClick={() => setBuilt(built.slice(0, -1))} disabled={!built.length}><Delete size={20} /></button>
-                  <button className="btn-primary flex-1 py-3.5 text-lg flex items-center justify-center gap-2"
-                    disabled={built.length !== needLen} onClick={submitBuilt}>
-                    <span>정답 확인</span><ArrowRight size={22} />
-                  </button>
-                </div>
-              )}
             </>
           ) : (
             <div className={`grid gap-2.5 ${q.options.length === 3 && !q.options[0].isHanja ? 'grid-cols-1' : 'grid-cols-2'}`}>
@@ -607,26 +598,40 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
             </div>
           )}
 
-          {!answered && !q.assemble && (
-            <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-200">
-              <button className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-2" disabled={!sel} onClick={submitChoice}>
-                <span>{sel ? '정답 확인' : '보기를 골라요'}</span>{sel && <ArrowRight size={22} />}
-              </button>
+          {/* 힌트는 왼쪽, 정답 확인은 오른쪽 — 서로 떨어뜨려 잘못 누르지 않게 함 */}
+          {!answered && (
+            <div className="flex items-stretch gap-6 mt-4 pt-4 border-t-2 border-dashed border-slate-200">
+              <div className="w-[26%] shrink-0">
+                {kind !== 'check' && !inRetry && (
+                  <button onClick={pressHint} disabled={!!hint} aria-label="힌트"
+                    className="btn-secondary w-full h-full px-2 py-2 flex flex-col items-center justify-center gap-1 disabled:opacity-40">
+                    <span className="flex items-center gap-1 text-sm"><Lightbulb size={18} className="text-amber-500" />힌트</span>
+                    {freeLeft > 0
+                      ? <span className="flex items-center gap-0.5">{Array.from({ length: round.free }).map((_, i) => (
+                        <span key={i} className={`w-2 h-2 rounded-full ${i < freeLeft ? 'bg-amber-400' : 'bg-slate-200'}`} />
+                      ))}</span>
+                      : <span className="flex items-center gap-0.5 text-[11px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"><Star size={11} className="fill-amber-500 text-amber-500" />{config.hintCost}개</span>}
+                  </button>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 flex gap-2">
+                {q.assemble && (
+                  <button className="btn-secondary shrink-0 px-4 py-4" aria-label="지우기" onClick={() => setBuilt(built.slice(0, -1))} disabled={!built.length}><Delete size={20} /></button>
+                )}
+                {q.assemble ? (
+                  <button className="btn-primary flex-1 py-4 text-lg flex items-center justify-center gap-2"
+                    disabled={built.length !== needLen} onClick={submitBuilt}>
+                    <span>정답 확인</span><ArrowRight size={22} />
+                  </button>
+                ) : (
+                  <button className="btn-primary flex-1 py-4 text-lg flex items-center justify-center gap-2" disabled={!sel} onClick={submitChoice}>
+                    <span>{sel ? '정답 확인' : '보기를 골라요'}</span>{sel && <ArrowRight size={22} />}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
-          {!answered && kind !== 'check' && !inRetry && (
-            <button onClick={pressHint} disabled={!!hint}
-              className="btn-secondary w-full py-3 mt-3 flex items-center justify-center gap-2 disabled:opacity-40">
-              <Lightbulb size={20} className="text-amber-500" />
-              <span className="text-sm">힌트</span>
-              {freeLeft > 0
-                ? <span className="flex items-center gap-0.5">{Array.from({ length: round.free }).map((_, i) => (
-                  <span key={i} className={`w-2.5 h-2.5 rounded-full ${i < freeLeft ? 'bg-amber-400' : 'bg-slate-200'}`} />
-                ))}</span>
-                : <span className="flex items-center gap-0.5 text-xs font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"><Star size={12} className="fill-amber-500 text-amber-500" />{config.hintCost}개</span>}
-            </button>
-          )}
           {!answered && kind === 'check' && (
             <button onClick={() => (items.length ? finish(items) : quit())} className="btn-secondary w-full py-3 mt-3 text-sm">여기까지만 할래요</button>
           )}
