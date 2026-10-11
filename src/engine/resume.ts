@@ -36,7 +36,7 @@ export function loadRound(): SavedRound | null {
     if (!raw) return null;
     const r = JSON.parse(raw) as SavedRound;
     const ok = r && Array.isArray(r.questions) && r.questions.length > 0 && Array.isArray(r.items)
-      && r.items.length < r.questions.length && Date.now() - r.ts < KEEP_MS;
+      && r.items.length <= r.questions.length && Date.now() - r.ts < KEEP_MS;
     if (!ok) { clearRound(); return null; }
     return r;
   } catch { clearRound(); return null; }

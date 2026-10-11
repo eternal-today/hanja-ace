@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle2, Delete, Flame, Home, Lightbulb, Loader2, Rota
 import { Question, RoundItem, RoundKind, RoundRecord } from '../types';
 import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
 import { actions, balanceOf, getState, useStore } from '../engine/store';
-import { answerText, chooseType, freeHints, hintLines, makeQuestion, planRound, poolChars, questionText, wordsFor } from '../engine/quiz';
+import { answerText, chooseType, freeHints, hintLines, makeQuestion, planRound, poolChars, questionText, shuffle, wordsFor } from '../engine/quiz';
 import { Tone, applyAnswer, toneOf } from '../engine/srs';
 import { fireConfetti, speak, tap, toast } from '../components/ui';
 import { SavedRound, clearRound, saveRound } from '../engine/resume';
@@ -15,8 +15,11 @@ function buildRound(kind: RoundKind) {
   const s = getState();
   const plan = planRound(s.config, s.cards, kind);
   const pool = kind === 'check' ? charsOfStage('8급') : poolChars(s.config);
-  const candidates = [...new Set([...pool, ...Object.keys(s.cards)])];
-  const allowed = new Set(candidates);
+  // 문제와 낱말에는 "이미 만난 글자 + 이번 판의 새 글자"만 씀. 아직 못 만난 글자는 나오지 않음.
+  const known = kind === 'check' ? pool : [...new Set([...Object.keys(s.cards), ...plan.newChars])];
+  const allowed = new Set(known);
+  // 틀린 보기는 만난 글자에서 고르되, 만난 글자가 너무 적은 처음 며칠은 범위 안 글자를 빌려 씀
+  const candidates = known.length >= 8 ? known : [...new Set([...known, ...pool])];
   const config = kind === 'check' ? { ...s.config, difficulty: 2 } : s.config;
   const ctx = { config, candidates, allowed, usedWords: new Set<string>() };
   const met = new Set<string>();
@@ -61,10 +64,17 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   const [round] = useState(() => (resume ? restoreRound(resume) : buildRound(kind)));
   const { questions, plan, allowed, tonesBefore } = round;
 
-  const [phase, setPhase] = useState<'intro' | 'solving' | 'result'>(!resume && plan.newChars.length ? 'intro' : 'solving');
+  const [phase, setPhase] = useState<'intro' | 'solving' | 'retry' | 'result'>(!resume && plan.newChars.length ? 'intro' : 'solving');
   const [introIdx, setIntroIdx] = useState(0);
   const [idx, setIdx] = useState(resume ? resume.items.length : 0);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);   // 제출한 답
+  const [sel, setSel] = useState<string | null>(null);         // 골라 둔 보기 (아직 제출 전)
+  const selAt = useRef(0);
+  const [okNow, setOkNow] = useState<boolean | null>(null);     // 방금 낸 답이 맞았는지
+  // 틀린 문제 다시 풀기 (별·기록·기억 상자에는 영향 없음)
+  const [retryQs, setRetryQs] = useState<Question[]>([]);
+  const [rIdx, setRIdx] = useState(0);
+  const pending = useRef<{ pct: number; hit: number | null }>({ pct: 0, hit: null });
   const [built, setBuilt] = useState<number[]>([]);       // 조립형: 고른 조각 번호
   const [hint, setHint] = useState<string[] | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
@@ -82,7 +92,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
   const readyAt = useRef(0);   // 이 시각 전에는 답을 받지 않음
   const tileAt = useRef(0);    // 마지막으로 조각을 누른 시각
-  useEffect(() => { readyAt.current = Date.now() + GUARD_MS; }, [idx, phase]);
+  useEffect(() => { readyAt.current = Date.now() + GUARD_MS; }, [idx, rIdx, phase]);
 
   // 풀 때마다 자동 저장 (앱이 닫혀도 이어서 풀 수 있게)
   useEffect(() => {
@@ -95,31 +105,41 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
 
   // 기기의 뒤로가기: 풀이 중이면 확인창, 아니면 홈으로
   useEffect(() => {
-    backRef.current = () => { if (phase === 'solving') setAskQuit(v => !v); else onExit(); };
+    backRef.current = () => { if (phase === 'solving') setAskQuit(v => !v); else if (phase === 'retry') enterResult(); else onExit(); };
     return () => { backRef.current = null; };
   });
 
-  const q = questions[idx];
+  const inRetry = phase === 'retry';
+  const q = inRetry ? retryQs[rIdx] : questions[idx];
   const builtText = q?.tiles ? built.map(i => q.tiles![i]).join('') : '';
   const needLen = q?.assemble ? Array.from(q.answer).length : 0;
   const answered = picked !== null;
-  const lastOk = answered && items[idx]?.ok;
+  const lastOk = answered && okNow === true;
   const freeLeft = round.free - freeUsed;
   const name = config.childName?.trim();
 
   // 듣고 고르기: 문제가 나오면 바로 읽어 줌
   useEffect(() => {
-    if (phase === 'solving' && q?.type === 'listen') {
+    if ((phase === 'solving' || phase === 'retry') && q?.type === 'listen') {
       const t = setTimeout(() => speak(hunEum(q.c)), 350);
       return () => clearTimeout(t);
     }
-  }, [phase, idx]);
+  }, [phase, idx, rIdx]);
+
+  // 이어서 풀기인데 마지막 문제까지 이미 답한 상태로 닫혔던 경우: 바로 결과로
+  const resumedDone = useRef(false);
+  useEffect(() => {
+    if (resume && !resumedDone.current && items.length >= questions.length && questions.length > 0) {
+      resumedDone.current = true;
+      finish(items);
+    }
+  }, []);
 
   // ── 문제가 없을 때 ──
   if (!questions.length) {
     const text = kind === 'check' ? '8급 글자는 이미 모두 만났어요!'
       : kind === 'word' ? '낱말이 준비된 글자가 아직 없어요. 다른 놀이를 골라 볼까?'
-        : '아직 공부할 글자가 없어요. 부모님 화면에서 묶음을 골라 주세요.';
+        : '아직 공부할 글자가 없어요. 부모님 화면에서 묶음과 새 글자 수를 확인해 주세요.';
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 text-center">
         <div className="text-6xl">📭</div>
@@ -144,11 +164,16 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     clearRound();
     const hit = actions.addRecord(rec);
     setRecord(rec);
-    setPhase('result');
     const pct = total ? Math.round((correct / total) * 100) : 0;
-    if (pct === 100) setTimeout(() => fireConfetti('epic'), 300);
-    else if (pct >= 80) setTimeout(() => fireConfetti('big'), 300);
-    if (hit) setTimeout(() => onMilestone(hit), 1400);
+    pending.current = { pct, hit };
+    // 틀린 문제가 있으면 결과 전에 한 번씩 다시 풀어 봄 (별과 기록은 이미 정해졌고 바뀌지 않음)
+    const wrongQs = kind === 'check' ? [] : questions.filter((_, i) => finalItems[i] && !finalItems[i].ok);
+    if (wrongQs.length) {
+      setRetryQs(wrongQs.map(x => ({ ...x, options: shuffle(x.options), tiles: x.tiles ? shuffle(x.tiles) : x.tiles, isNew: false })));
+      setRIdx(0);
+      setPicked(null); setSel(null); setBuilt([]); setHint(null); setRemoved([]); setOkNow(null);
+      setPhase('retry');
+    } else enterResult();
 
     if (config.geminiKey) {
       setFeedbackLoading(true);
@@ -170,16 +195,37 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     }
   };
 
+  const enterResult = () => {
+    const { pct, hit } = pending.current;
+    setPhase('result');
+    if (pct === 100) setTimeout(() => fireConfetti('epic'), 300);
+    else if (pct >= 80) setTimeout(() => fireConfetti('big'), 300);
+    if (hit) setTimeout(() => onMilestone(hit), 1400);
+  };
+
   const goNext = (finalItems: RoundItem[]) => {
+    if (inRetry) {
+      if (rIdx + 1 >= retryQs.length) { enterResult(); return; }
+      setRIdx(rIdx + 1);
+      setPicked(null); setSel(null); setBuilt([]); setHint(null); setRemoved([]); setOkNow(null);
+      return;
+    }
     if (idx + 1 >= questions.length) { finish(finalItems); return; }
     setIdx(idx + 1);
-    setPicked(null); setBuilt([]); setHint(null); setRemoved([]);
+    setOkNow(null);
+    setPicked(null); setSel(null); setBuilt([]); setHint(null); setRemoved([]);
   };
 
   const answer = (value: string) => {
     if (answered || Date.now() < readyAt.current) return;
     readyAt.current = Date.now() + GUARD_MS;
     const ok = value === q.answer;
+    setOkNow(ok);
+    if (inRetry) {   // 다시 풀기: 연습만. 별·기록·기억 상자는 그대로
+      setPicked(value);
+      if (ok) timerRef.current = setTimeout(() => goNext(items), 1000);
+      return;
+    }
     const hinted = hint !== null;
     const cards = { ...getState().cards };
     cards[q.c] = applyAnswer(cards[q.c], ok, hinted, kind === 'check');
@@ -202,7 +248,9 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     setHint(lines);
     if (q.options.length > 2) {
       const wrong = q.options.filter(o => o.key !== q.answer).map(o => o.key);
-      setRemoved([wrong[Math.floor(Math.random() * wrong.length)]]);
+      const out = wrong[Math.floor(Math.random() * wrong.length)];
+      setRemoved([out]);
+      if (sel === out) setSel(null);
     }
     if (paid) setPaidUsed(n => n + 1); else setFreeUsed(n => n + 1);
   };
@@ -215,12 +263,22 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   };
 
   /** 화면의 홈 버튼: 풀이 중이면 뒤로가기와 같은 확인창을 거침 */
-  const leave = () => { if (phase === 'solving') setAskQuit(true); else onExit(); };
+  const leave = () => { if (phase === 'solving') setAskQuit(true); else if (phase === 'retry') enterResult(); else onExit(); };
   const quit = () => {
     setAskQuit(false);
     if (timerRef.current) clearTimeout(timerRef.current);
     if (items.length === 0) clearRound();   // 한 문제도 안 풀었으면 남기지 않음
     onExit();
+  };
+  /** 보기는 누르면 "고르기"만 되고, 정답 확인을 눌러야 제출됨 (잘못 눌러도 바꿀 수 있음) */
+  const choose = (key: string) => {
+    if (answered || removed.includes(key)) return;
+    selAt.current = Date.now();
+    setSel(key);
+  };
+  const submitChoice = () => {
+    if (!sel || removed.includes(sel) || Date.now() - selAt.current < GUARD_MS) return;
+    answer(sel);
   };
   const pressTile = (i: number) => {
     if (answered || built.includes(i) || built.length >= needLen) return;
@@ -380,6 +438,8 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
 
   // ════════ 문제 풀기 ════════
   if (!q) return null;
+  const curNo = inRetry ? rIdx + 1 : idx + 1;
+  const curTotal = inRetry ? retryQs.length : questions.length;
   const h = HANJA[q.c];
   const caption = q.type === 'hun' ? '이 한자의 뜻과 소리는?'
     : q.type === 'pick' ? '알맞은 한자를 골라요'
@@ -397,7 +457,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
           </button>
           <div className="bg-slate-200 h-2.5 flex-1 rounded-full overflow-hidden">
             <motion.div className="bg-gradient-to-r from-brand-500 to-brand-400 h-full rounded-full"
-              initial={{ width: 0 }} animate={{ width: `${((idx + 1) / questions.length) * 100}%` }} />
+              initial={{ width: 0 }} animate={{ width: `${(curNo / curTotal) * 100}%` }} />
           </div>
           <AnimatePresence>
             {combo >= 2 && (
@@ -408,7 +468,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
             )}
           </AnimatePresence>
           <span className="shrink-0 flex items-center gap-1 text-xs font-black text-amber-600"><Star size={14} className="fill-amber-400 text-amber-400" />{balance}</span>
-          <span className="shrink-0 text-xs font-black text-slate-400">{idx + 1}/{questions.length}</span>
+          <span className="shrink-0 text-xs font-black text-slate-400">{curNo}/{curTotal}</span>
         </div>
       </div>
 
@@ -418,11 +478,11 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
           <div className="w-full h-full bg-white rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center justify-center px-5 py-4 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-brand-500/10" />
             <div className="absolute top-4 left-5 right-5 flex items-center justify-between text-xs font-black">
-              <span className="text-slate-400">{KIND_NAME[kind]}</span>
+              <span className={inRetry ? 'text-rose-500' : 'text-slate-400'}>{inRetry ? '틀린 문제 다시 풀기 · 별과 상관없는 연습이에요' : KIND_NAME[kind]}</span>
               {q.isNew && <span className="bg-brand-100 text-brand-700 px-2.5 py-1 rounded-full">새 글자</span>}
             </div>
             <AnimatePresence mode="wait">
-              <motion.div key={idx} initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
+              <motion.div key={inRetry ? `r${rIdx}` : idx} initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
                 className="flex flex-col items-center justify-center gap-3 w-full text-center">
                 <div className="text-sm font-bold text-slate-500">{caption}</div>
 
@@ -472,7 +532,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                 {answered && (
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
                     className={`px-5 py-3 rounded-2xl font-black ${lastOk ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                    <div className="text-sm">{lastOk ? (combo >= 5 ? `${combo}연속 정답! 불타오른다! 🔥` : combo >= 3 ? `${combo}연속! 대단해! ⚡` : '정답이야! 🌟') : '아까비! 정답을 같이 볼까? 💪'}</div>
+                    <div className="text-sm">{lastOk ? (inRetry ? '이번엔 맞혔어! 👍' : combo >= 5 ? `${combo}연속 정답! 불타오른다! 🔥` : combo >= 3 ? `${combo}연속! 대단해! ⚡` : '정답이야! 🌟') : '아까비! 정답을 같이 볼까? 💪'}</div>
                     <div className="mt-1 text-lg text-slate-800">
                       {q.type === 'word' && q.word
                         ? <><span className="hanja text-2xl mr-2">{q.word.w}</span>{q.word.r}<span className="block text-sm font-bold text-slate-500 mt-0.5">{q.word.gloss}</span></>
@@ -533,9 +593,10 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                   ? isAns ? 'bg-emerald-50 border-emerald-400 text-emerald-700'
                     : isPicked ? 'bg-rose-50 border-rose-400 text-rose-600' : 'bg-white border-slate-100 text-slate-300'
                   : gone ? 'bg-slate-50 border-slate-100 text-slate-200'
-                    : 'bg-white border-slate-200 text-slate-800 shadow-sm active:bg-brand-100 active:border-brand-400';
+                    : o.key === sel ? 'bg-brand-100 border-brand-500 text-brand-900 shadow-md ring-2 ring-brand-200'
+                      : 'bg-white border-slate-200 text-slate-800 shadow-sm active:bg-brand-50 active:border-brand-300';
                 return (
-                  <button key={o.key} disabled={answered || gone} {...tap(() => { if (!gone) answer(o.key); })}
+                  <button key={o.key} disabled={answered || gone} {...tap(() => choose(o.key))}
                     className={`relative rounded-3xl border-2 transition-colors select-none flex items-center justify-center ${o.isHanja ? 'hanja text-[clamp(3rem,13vmin,5rem)] py-4 landscape:py-6' : 'text-[clamp(1.15rem,4.6vmin,1.75rem)] font-black py-5 landscape:py-7 px-2'} ${tone}`}>
                     {o.label}
                     {answered && isAns && <CheckCircle2 size={22} className="absolute top-2 right-2 text-emerald-500" />}
@@ -546,7 +607,15 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
             </div>
           )}
 
-          {!answered && kind !== 'check' && (
+          {!answered && !q.assemble && (
+            <div className="mt-4 pt-4 border-t-2 border-dashed border-slate-200">
+              <button className="btn-primary w-full py-4 text-lg flex items-center justify-center gap-2" disabled={!sel} onClick={submitChoice}>
+                <span>{sel ? '정답 확인' : '보기를 골라요'}</span>{sel && <ArrowRight size={22} />}
+              </button>
+            </div>
+          )}
+
+          {!answered && kind !== 'check' && !inRetry && (
             <button onClick={pressHint} disabled={!!hint}
               className="btn-secondary w-full py-3 mt-3 flex items-center justify-center gap-2 disabled:opacity-40">
               <Lightbulb size={20} className="text-amber-500" />

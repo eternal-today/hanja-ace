@@ -54,9 +54,10 @@ export function planRound(config: Config, cards: Record<string, Card>, kind: Rou
   }
 
   let pool = poolChars(config);
-  const allowed = new Set([...pool, ...Object.keys(cards)]);
+  // 낱말에는 이미 만난 글자와 이번 판에 새로 나올 글자만 들어가게 함
+  const upcoming = pool.filter(c => !cards[c]).slice(0, config.newPerRound);
+  const allowed = new Set([...Object.keys(cards), ...upcoming]);
   if (kind === 'word') pool = pool.filter(c => wordsFor(c, allowed).length > 0);
-  const count = config.count;
   if (!pool.length) return { targets: [], newChars: [], dueCount: 0 };
 
   const seen = pool.filter(c => cards[c]);
@@ -65,6 +66,11 @@ export function planRound(config: Config, cards: Record<string, Card>, kind: Rou
     .sort((a, b) => cards[a].box - cards[b].box || cards[b].wrong - cards[a].wrong);
 
   // 새 글자: 묶음 순서대로. 한 판에서 두 번씩 만나게 함 (처음에 한 번, 뒤에서 한 번 더)
+  // 낼 수 있는 글자가 적으면 판도 짧게 함: 한 판에서 같은 글자는 두 번까지만.
+  // (글자 서너 개만 되풀이해 풀어 별을 모으는 일을 막음)
+  const usable = seen.length + Math.min(unseen.length, config.newPerRound);
+  if (!usable) return { targets: [], newChars: [], dueCount: 0 };
+  const count = Math.min(config.count, usable * 2);
   const nNew = Math.min(unseen.length, config.newPerRound, Math.ceil(count / 2));
   const newChars = unseen.slice(0, nNew);
   const targets: string[] = [...newChars];
@@ -74,9 +80,9 @@ export function planRound(config: Config, cards: Record<string, Card>, kind: Rou
   // 복습 차례가 아닌 글자로 채움 (자주 틀린 글자부터)
   const rest = shuffle(seen.filter(c => cards[c].due > today)).sort((a, b) => cards[b].wrong - cards[a].wrong);
   for (const c of rest) { if (targets.length >= count) break; targets.push(c); }
-  // 그래도 모자라면 범위 안 글자를 되풀이
-  const base = targets.length ? [...new Set(targets)] : pool;
-  while (targets.length < count) targets.push(pickOne(base));
+  // 그래도 모자라면 같은 글자를 한 번씩 더 (글자마다 두 번까지)
+  const again = shuffle([...new Set(targets)].filter(c => targets.filter(x => x === c).length < 2));
+  for (const c of again) { if (targets.length >= count) break; targets.push(c); }
 
   // 섞되, 새 글자의 첫 등장은 앞쪽에 두고 같은 글자가 붙어 나오지 않게 함
   const head = shuffle(newChars);

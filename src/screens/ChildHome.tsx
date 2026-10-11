@@ -85,7 +85,7 @@ export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }
               <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shrink-0"><PlayCircle size={26} /></div>
               <div className="flex-1 min-w-0">
                 <div className="font-black text-emerald-800">이어서 풀기</div>
-                <div className="text-xs font-bold text-emerald-600">{KIND_NAME[saved.kind]} · {saved.questions.length}문제 중 {saved.items.length + 1}번 문제부터</div>
+                <div className="text-xs font-bold text-emerald-600">{KIND_NAME[saved.kind]} · {saved.questions.length}문제 중 {Math.min(saved.items.length + 1, saved.questions.length)}번 문제부터</div>
               </div>
               <ChevronRight size={18} className="text-emerald-400 shrink-0" />
             </motion.button>
