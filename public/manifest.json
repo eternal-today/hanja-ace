@@ -1,0 +1,12 @@
+{
+  "name": "우리집 한자 에이스",
+  "short_name": "한자 에이스",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f1ff",
+  "theme_color": "#6d3fe0",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
