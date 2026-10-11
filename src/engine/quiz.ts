@@ -5,7 +5,8 @@
  * 정답 판정은 전부 데이터로 함 (AI가 끼지 않음).
  */
 import { Card, Config, Option, QType, Question, RoundKind, Word } from '../types';
-import { GROUP_BY_ID, HANJA, WORDS_BY_CHAR, charsOfStage, hunEum } from '../data';
+import { GROUP_BY_ID, HANJA, WORDS, WORDS_BY_CHAR, charsOfStage, hunEum } from '../data';
+import { LOOKALIKE } from '../data/lookalike';
 import { dayIndex } from './srs';
 
 export const ri = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
@@ -98,64 +99,97 @@ export function planRound(config: Config, cards: Record<string, Card>, kind: Rou
 }
 
 // ── 보기 만들기 ──
-/** 헷갈리기 쉬운 글자: 음이 같거나, 같은 묶음이거나, 부수가 같은 글자 */
-function similarChars(c: string, candidates: string[]): string[] {
+/**
+ * 헷갈리기 쉬운 글자를 헷갈리는 순서대로:
+ * 모양이 비슷한 글자 → 음이 같은 글자 → 같은 묶음(주제)의 글자 → 부수가 같은 글자
+ */
+function similarChars(c: string, from: string[]): string[] {
   const h = HANJA[c];
-  const sameEum = candidates.filter(x => HANJA[x].eum === h.eum);
-  const sameGroup = candidates.filter(x => HANJA[x].groupId === h.groupId);
-  const sameRad = candidates.filter(x => HANJA[x].radical === h.radical);
-  return [...new Set([...shuffle(sameEum), ...shuffle(sameGroup), ...shuffle(sameRad)])];
+  const has = new Set(from);
+  const look = (LOOKALIKE[c] || []).filter(x => has.has(x));
+  const sameEum = from.filter(x => HANJA[x].eum === h.eum);
+  const sameGroup = from.filter(x => HANJA[x].groupId === h.groupId);
+  const sameRad = from.filter(x => HANJA[x].radical === h.radical);
+  return [...new Set([...shuffle(look), ...shuffle(sameEum), ...shuffle(sameGroup), ...shuffle(sameRad)])].filter(x => x !== c);
 }
 
-function distractorChars(c: string, candidates: string[], n: number, hard: boolean): string[] {
+/**
+ * 틀린 보기 글자 고르기.
+ *  쉬움: 아무 글자 / 보통: 비슷한 글자 2개 + 아무 글자 / 어려움: 전부 비슷한 글자
+ */
+function distractorChars(c: string, ctx: MakeCtx, n: number): string[] {
+  const diff = ctx.config.difficulty;
   const label = hunEum(c);
-  const usable = candidates.filter(x => x !== c && hunEum(x) !== label);
   const out: string[] = [];
   const labels = new Set<string>([label]);
-  const take = (list: string[]) => {
+  const take = (list: string[], limit = n) => {
     for (const x of list) {
-      if (out.length >= n) return;
-      if (out.includes(x) || labels.has(hunEum(x))) continue;
+      if (out.length >= limit) return;
+      if (x === c || out.includes(x) || labels.has(hunEum(x))) continue;
       out.push(x); labels.add(hunEum(x));
     }
   };
-  if (hard) take(similarChars(c, usable));
-  take(shuffle(usable));
+  if (diff >= 2) {
+    const want = diff === 3 ? n : Math.min(2, n);
+    take(similarChars(c, ctx.candidates), want);   // 먼저 이미 만난 글자에서
+    take(similarChars(c, ctx.wide), want);         // 모자라면 범위 안 글자까지
+  }
+  take(shuffle(ctx.candidates));
   // 범위가 아주 좁을 때는 같은 단계의 다른 글자에서 빌려 옴
-  if (out.length < n) take(shuffle(charsOfStage(HANJA[c].stage).filter(x => x !== c)));
+  if (out.length < n) take(shuffle(charsOfStage(HANJA[c].stage)));
   return out;
 }
 
-function readingDistractors(word: Word, candidates: string[], n: number): string[] {
+/**
+ * 낱말 독음의 틀린 보기.
+ *  보통 이상: 진짜 있는 낱말 가운데 한 음절이 겹치는 것(주소 ↔ 주민, 장소)을 먼저 씀.
+ *            문장만 보고 "말이 되는 것"을 고르는 식으로는 맞히기 어렵게 함.
+ */
+function readingDistractors(word: Word, ctx: MakeCtx, n: number): string[] {
   const ans = word.r;
   const syl = Array.from(ans);
-  const out = new Set<string>();
-  // 1) 두 글자 낱말은 순서를 뒤집은 것
-  if (syl.length === 2 && syl[0] !== syl[1] && Math.random() < 0.6) out.add(syl[1] + syl[0]);
-  // 2) 한 음절을 다른 글자의 음으로 바꾼 것
-  const eums = shuffle([...new Set(candidates.map(c => HANJA[c].eum))]);
+  const out: string[] = [];
+  const add = (r: string) => { if (r !== ans && !out.includes(r) && out.length < n) out.push(r); };
+
+  if (ctx.config.difficulty >= 2) {
+    const wide = new Set(ctx.wide);
+    const real = WORDS.filter(w => w.w !== word.w && w.r !== ans && Array.from(w.r).length === syl.length
+      && Array.from(w.w).every(ch => wide.has(ch)));
+    // 같은 자리에 같은 음절 → 다른 자리에 같은 음절 → 같은 한자가 들어간 낱말
+    const samePos = real.filter(w => Array.from(w.r).some((x, i) => x === syl[i]));
+    const anyPos = real.filter(w => Array.from(w.r).some(x => syl.includes(x)));
+    const sameChar = real.filter(w => Array.from(w.w).some(ch => word.w.includes(ch)));
+    for (const w of [...shuffle(samePos), ...shuffle(sameChar), ...shuffle(anyPos)]) add(w.r);
+  }
+  // 두 글자 낱말은 순서를 뒤집은 것
+  if (syl.length === 2 && syl[0] !== syl[1] && out.length < n && Math.random() < 0.5) add(syl[1] + syl[0]);
+  // 모자라면 한 음절을 다른 글자의 음으로 바꾼 것
+  const eums = shuffle([...new Set(ctx.candidates.map(c => HANJA[c].eum))]);
   let guard = 0;
-  while (out.size < n && guard++ < 60) {
+  while (out.length < n && guard++ < 80 && eums.length) {
     const pos = ri(0, syl.length - 1);
     const e = eums[guard % eums.length];
-    if (!e || e === syl[pos]) continue;
+    if (e === syl[pos]) continue;
     const alt = [...syl]; alt[pos] = e;
-    const s = alt.join('');
-    if (s !== ans) out.add(s);
+    add(alt.join(''));
   }
-  return shuffle([...out]).slice(0, n);
+  return out;
 }
 
 export interface MakeCtx {
   config: Config;
-  candidates: string[];     // 보기로 쓸 수 있는 글자
+  candidates: string[];     // 보기로 쓸 수 있는 글자 (이미 만난 글자)
+  wide: string[];           // 비슷한 보기를 찾을 때만 쓰는 넓은 범위 (만난 글자 + 고른 묶음)
   allowed: Set<string>;     // 낱말에 들어가도 되는 글자
   usedWords: Set<string>;   // 이번 판에 이미 낸 낱말
+  used: Set<string>;        // 이번 판에 이미 낸 문제 (유형:글자)
 }
+
+const freshWords = (c: string, ctx: MakeCtx) => wordsFor(c, ctx.allowed).filter(w => !ctx.usedWords.has(w.w));
 
 /** 이 글자로 낼 문제 유형 고르기 */
 export function chooseType(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: boolean): QType {
-  const hasWord = wordsFor(c, ctx.allowed).length > 0;
+  const hasWord = freshWords(c, ctx).length > 0;
   if (kind === 'check') return 'hun';
   if (kind === 'hun') return Math.random() < 0.5 ? 'hun' : 'pick';
   if (kind === 'listen') return canSpeak() ? 'listen' : 'pick';
@@ -169,31 +203,56 @@ export function chooseType(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: 
   return bag.length ? pickOne(bag) : 'hun';
 }
 
+/**
+ * 이 글자의 다음 문제. 한 판 안에서 같은 문제(같은 낱말, 같은 유형의 같은 글자)는 다시 내지 않음.
+ * 낼 수 있는 새 문제가 없으면 null (그 자리는 건너뜀).
+ */
+export function nextQuestion(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: boolean): Question | null {
+  const m = ctx.config.modes;
+  const speak = canSpeak();
+  const pool: QType[] = kind === 'check' ? ['hun']
+    : kind === 'hun' ? ['hun', 'pick']
+      : kind === 'listen' ? (speak ? ['listen', 'pick', 'hun'] : ['pick', 'hun'])
+        : kind === 'word' ? ['word', 'hun', 'pick']
+          : [...(m.word ? ['word'] : []), ...(m.hun ? ['hun', 'pick'] : []), ...(m.listen && speak ? ['listen'] : []), 'hun', 'pick'] as QType[];
+  const first = chooseType(c, kind, ctx, firstMeet);
+  const order = [first, ...shuffle([...new Set(pool)].filter(t => t !== first))];
+  for (const t of order) {
+    if (t === 'word') {
+      if (!freshWords(c, ctx).length) continue;
+    } else if (ctx.used.has(`${t}:${c}`)) continue;
+    const q = makeQuestion(c, t, ctx, firstMeet);
+    ctx.used.add(`${q.type}:${q.c}`);
+    return q;
+  }
+  return null;
+}
+
 export function makeQuestion(c: string, type: QType, ctx: MakeCtx, isNew = false): Question {
   const diff = ctx.config.difficulty;
   const nWrong = diff === 1 ? 2 : 3;
   const hard = diff === 3;
 
   if (type === 'word') {
-    const words = wordsFor(c, ctx.allowed);
-    const fresh = words.filter(w => !ctx.usedWords.has(w.w));
-    const word = pickOne(fresh.length ? fresh : words);
+    const fresh = freshWords(c, ctx);   // 이번 판에 아직 안 낸 낱말만
+    const word = fresh.length ? pickOne(fresh) : undefined;
     if (word) {
       ctx.usedWords.add(word.w);
       if (hard) {
-        // 어려움: 음절 조각을 조립해 답을 만듦
+        // 어려움: 음절 조각을 조립해 답을 만듦. 틀린 조각도 비슷한 낱말에서 가져옴
         const need = Array.from(word.r);
-        const extra = shuffle([...new Set(ctx.candidates.map(x => HANJA[x].eum))].filter(e => !need.includes(e))).slice(0, 3);
+        const fromWords = readingDistractors(word, ctx, 4).flatMap(r => Array.from(r)).filter(e => !need.includes(e));
+        const extra = [...new Set(fromWords)].slice(0, 3);
         return { type, c, options: [], answer: word.r, word, assemble: true, tiles: shuffle([...need, ...extra]), isNew };
       }
-      const wrong = readingDistractors(word, ctx.candidates, nWrong);
+      const wrong = readingDistractors(word, ctx, nWrong);
       const options: Option[] = shuffle([word.r, ...wrong]).map(r => ({ key: r, label: r, isHanja: false }));
       return { type, c, options, answer: word.r, word, isNew };
     }
     type = 'hun';
   }
 
-  const wrong = distractorChars(c, ctx.candidates, nWrong, hard);
+  const wrong = distractorChars(c, ctx, nWrong);
   if (type === 'hun') {
     const options: Option[] = shuffle([c, ...wrong]).map(x => ({ key: x, label: hunEum(x), isHanja: false }));
     return { type, c, options, answer: c, isNew };

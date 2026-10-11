@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle2, Delete, Flame, Home, Lightbulb, Loader2, Rota
 import { Question, RoundItem, RoundKind, RoundRecord } from '../types';
 import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
 import { actions, balanceOf, getState, useStore } from '../engine/store';
-import { answerText, chooseType, freeHints, hintLines, makeQuestion, planRound, poolChars, questionText, shuffle, wordsFor } from '../engine/quiz';
+import { answerText, freeHints, hintLines, nextQuestion, planRound, poolChars, questionText, shuffle, wordsFor } from '../engine/quiz';
 import { Tone, applyAnswer, toneOf } from '../engine/srs';
 import { fireConfetti, speak, tap, toast } from '../components/ui';
 import { SavedRound, clearRound, saveRound } from '../engine/resume';
@@ -21,13 +21,16 @@ function buildRound(kind: RoundKind) {
   // 틀린 보기는 만난 글자에서 고르되, 만난 글자가 너무 적은 처음 며칠은 범위 안 글자를 빌려 씀
   const candidates = known.length >= 8 ? known : [...new Set([...known, ...pool])];
   const config = kind === 'check' ? { ...s.config, difficulty: 2 } : s.config;
-  const ctx = { config, candidates, allowed, usedWords: new Set<string>() };
+  const wide = [...new Set([...known, ...pool])];   // 비슷한 보기를 찾는 범위
+  const ctx = { config, candidates, wide, allowed, usedWords: new Set<string>(), used: new Set<string>() };
   const met = new Set<string>();
-  const questions: Question[] = plan.targets.map(c => {
+  const questions: Question[] = [];
+  for (const c of plan.targets) {
     const first = plan.newChars.includes(c) && !met.has(c);
     met.add(c);
-    return makeQuestion(c, chooseType(c, kind, ctx, first), ctx, first);
-  });
+    const q = nextQuestion(c, kind, ctx, first);   // 한 판에서 같은 문제는 다시 나오지 않음
+    if (q) questions.push(q);
+  }
   const tonesBefore: Record<string, Tone> = {};
   for (const c of new Set(plan.targets)) tonesBefore[c] = toneOf(s.cards[c]);
   const newShare = questions.filter(q => plan.newChars.includes(q.c)).length;

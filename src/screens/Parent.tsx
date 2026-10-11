@@ -208,9 +208,9 @@ export default function Parent({ onHome }: { onHome: () => void }) {
                   ))}
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  {draft.difficulty === 1 ? '보기 3개 가운데 고릅니다.'
-                    : draft.difficulty === 2 ? '보기 4개 가운데 고릅니다.'
-                      : '보기 4개에 음이 같거나 같은 묶음인 헷갈리는 글자를 섞고, 낱말은 음절 조각을 조립해 답합니다. (실제 시험은 한글로 직접 씁니다)'}
+                  {draft.difficulty === 1 ? '보기 3개 가운데 고릅니다. 틀린 보기는 아무 글자나 나옵니다.'
+                    : draft.difficulty === 2 ? '보기 4개 가운데 고릅니다. 모양이 비슷하거나 음이 같은 글자, 한 음절이 겹치는 낱말을 2개쯤 섞습니다.'
+                      : '보기 4개가 모두 헷갈리는 글자로 나오고, 낱말은 음절 조각을 조립해 답합니다. (실제 시험은 한글로 직접 씁니다)'}
                 </p>
               </div>
               <div className="space-y-3">
