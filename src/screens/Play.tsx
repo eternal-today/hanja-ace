@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight, CheckCircle2, Delete, Flame, Home, Lightbulb, Loader2, RotateCcw, Sparkles, Star, Volume2, XCircle } from 'lucide-react';
 import { Question, RoundItem, RoundKind, RoundRecord } from '../types';
 import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
-import { actions, balanceOf, getState, useStore } from '../engine/store';
+import { Milestone, actions, getState, useStore } from '../engine/store';
+import { HINT_COST, useWallet } from '../ace/wallet';
 import { answerText, freeHints, hintLines, nextQuestion, planRound, poolChars, questionText, shuffle, wordsFor } from '../engine/quiz';
 import { Tone, applyAnswer, toneOf } from '../engine/srs';
 import { fireConfetti, speak, tap, toast } from '../components/ui';
@@ -54,7 +55,7 @@ interface Props {
   kind: RoundKind;
   onExit: () => void;
   onAgain: () => void;
-  onMilestone: (stars: number) => void;
+  onMilestone: (m: Milestone) => void;
   onOpenShop: () => void;
   resume?: SavedRound | null;                              // 이어서 풀기
   backRef: React.MutableRefObject<null | (() => void)>;    // 기기의 뒤로가기가 눌렸을 때 부를 동작
@@ -63,7 +64,7 @@ interface Props {
 export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, resume, backRef }: Props) {
   const store = useStore();
   const { config } = store;
-  const balance = balanceOf(store);
+  const balance = useWallet().balance;   // 수학·한자 합산 별
   const [round] = useState(() => (resume ? restoreRound(resume) : buildRound(kind)));
   const { questions, plan, allowed, tonesBefore } = round;
 
@@ -77,7 +78,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   // 틀린 문제 다시 풀기 (별·기록·기억 상자에는 영향 없음)
   const [retryQs, setRetryQs] = useState<Question[]>([]);
   const [rIdx, setRIdx] = useState(0);
-  const pending = useRef<{ pct: number; hit: number | null }>({ pct: 0, hit: null });
+  const pending = useRef<{ pct: number; hit: Milestone | null }>({ pct: 0, hit: null });
   const [built, setBuilt] = useState<number[]>([]);       // 조립형: 고른 조각 번호
   const [hint, setHint] = useState<string[] | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
@@ -155,7 +156,9 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   const finish = async (finalItems: RoundItem[]) => {
     const correct = finalItems.filter(i => i.ok).length;
     const total = finalItems.length;
-    const stars = Math.floor(correct / 5);
+    // 찍기 방지: 정답이 40%보다 적은 판은 별 없음 (아무거나 고르면 25~33%)
+    const accOk = total === 0 || correct / total >= 0.4;
+    const stars = accOk ? Math.floor(correct / 5) : 0;
     const groupNames = [...new Set(finalItems.map(i => {
       const g = GROUP_BY_ID[HANJA[i.c]?.groupId];
       return g ? `${g.stage} ${g.name}` : '';
@@ -163,6 +166,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     const rec: RoundRecord = {
       ts: Date.now(), date: new Date().toLocaleDateString('ko-KR'), kind, correct, total, stars,
       hintsFree: freeUsed, hintsPaid: paidUsed, groupNames, items: finalItems,
+      ...(!accOk && Math.floor(correct / 5) > 0 ? { lowAcc: true } : {}),
     };
     clearRound();
     const hit = actions.addRecord(rec);
@@ -261,7 +265,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   const pressHint = () => {
     if (answered || hint || kind === 'check') return;
     if (freeLeft > 0) { showHint(false); return; }
-    if (balance < config.hintCost) { toast('별이 모자라요. 스스로 풀어 볼까? 💪'); return; }
+    if (balance < HINT_COST) { toast('별이 모자라요. 스스로 풀어 볼까? 💪'); return; }
     setAskPaid(true);
   };
 
@@ -344,7 +348,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     const rank: Record<Tone, number> = { none: 0, grey: 1, color: 2, gold: 3 };
     const upGold = uniq.filter(c => toneOf(cards[c]) === 'gold' && tonesBefore[c] !== 'gold');
     const upColor = uniq.filter(c => toneOf(cards[c]) === 'color' && rank[tonesBefore[c]] < 2);
-    const spent = record.hintsPaid * config.hintCost;
+    const spent = record.hintsPaid * HINT_COST;
     return (
       <div className="flex-1 overflow-y-auto p-6">
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
@@ -379,6 +383,12 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                 이번 판: 번 별 {record.stars}개{spent > 0 ? ` · 힌트에 쓴 별 ${spent}개` : ''}
                 <span className="text-amber-400 font-medium"> · 5문제 맞힐 때마다 별 1개</span>
               </p>
+              <p className="text-[11px] font-bold text-amber-500 mt-0.5">수학과 한자에서 모은 별을 함께 써요</p>
+              {record.lowAcc && (
+                <p className="text-xs font-black text-rose-500 mt-2 bg-white rounded-xl px-3 py-2">
+                  10문제 중 4문제보다 적게 맞혀서 이번 판은 별이 없어요. 천천히 생각하고 고르면 별을 받을 수 있어! 💪
+                </p>
+              )}
             </button>
             {(upGold.length > 0 || upColor.length > 0) && (
               <div className="bg-brand-50 border border-brand-100 rounded-3xl p-4 text-left space-y-2">
@@ -613,7 +623,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                       ? <span className="flex items-center gap-0.5">{Array.from({ length: round.free }).map((_, i) => (
                         <span key={i} className={`w-2 h-2 rounded-full ${i < freeLeft ? 'bg-amber-400' : 'bg-slate-200'}`} />
                       ))}</span>
-                      : <span className="flex items-center gap-0.5 text-[11px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"><Star size={11} className="fill-amber-500 text-amber-500" />{config.hintCost}개</span>}
+                      : <span className="flex items-center gap-0.5 text-[11px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"><Star size={11} className="fill-amber-500 text-amber-500" />{HINT_COST}개</span>}
                   </button>
                 )}
               </div>
@@ -675,13 +685,13 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
             <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8, opacity: 0 }} onClick={e => e.stopPropagation()}
               className="bg-white rounded-[2rem] p-7 max-w-xs w-full text-center shadow-2xl space-y-4">
               <div className="text-5xl">💡</div>
-              <h3 className="text-xl font-black text-slate-900 font-display">별 {config.hintCost}개를 쓰고 힌트를 볼까?</h3>
+              <h3 className="text-xl font-black text-slate-900 font-display">별 {HINT_COST}개를 쓰고 힌트를 볼까?</h3>
               <p className="text-sm font-bold text-slate-500">기본 힌트를 다 썼어요. 지금 가진 별은 {balance}개예요.</p>
               <div className="flex gap-2">
                 <button className="btn-secondary flex-1 py-3" onClick={() => setAskPaid(false)}>스스로 풀래</button>
                 <button className="btn-primary flex-1 py-3" onClick={() => {
                   setAskPaid(false);
-                  if (actions.spend('hint', config.hintCost, questionText(q))) showHint(true);
+                  if (actions.spendHint(questionText(q))) showHint(true);
                   else toast('별이 모자라요.');
                 }}>힌트 볼래</button>
               </div>

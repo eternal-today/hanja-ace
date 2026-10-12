@@ -12,6 +12,7 @@
 import { useSyncExternalStore } from 'react';
 import { Card, Chance, Config, Coupon, RoundRecord, Spend } from '../types';
 import { GROUPS } from '../data';
+import { markDirty, notifyWallet, spendHint, summary, takeCelebration } from '../ace/wallet';
 
 const P = 'hanja_';
 const K = {
@@ -127,11 +128,15 @@ export function useStore(): State {
 }
 
 // ── 별 장부 ──
+/** 한자에서 번 별 (한자 뱃지 기준) */
 export const earnedStars = (s: State) => s.records.reduce((a, r) => a + (r.stars || 0), 0);
-export const spentStars = (s: State) => s.spends.reduce((a, x) => a + (x.amount || 0), 0);
-export const balanceOf = (s: State) => Math.max(0, earnedStars(s) - spentStars(s));
+/** 쓴 별·남은 별은 수학과 함께 쓰는 에이스 지갑에서 계산 (src/ace/wallet.ts) */
+export const spentStars = (_s?: State) => summary().spent;
+export const balanceOf = (_s?: State) => summary().balance;
+
+/** 판을 끝낸 뒤 띄울 축하: 합산 별 10개마다(100개마다 명예의 전당), 한자 뱃지 */
+export interface Milestone { value: number; hall: boolean; badge: string | null }
 export const earnedBadgeIds = (s: State) => { const e = earnedStars(s); return BADGES.filter(b => e >= b.need).map(b => b.id); };
-export const activeCoupons = (s: State) => s.coupons.filter(c => !c.usedAt);
 
 // ── 바꾸는 동작 ──
 export const actions = {
@@ -144,34 +149,26 @@ export const actions = {
     const key = `${answer}>${chosen}`;
     commit({ confusions: { ...state.confusions, [key]: (state.confusions[key] || 0) + 1 } });
   },
-  /** 한 판 끝: 기록 저장. 새로 넘긴 축하 마일스톤(10의 배수)을 돌려줌 */
-  addRecord(rec: RoundRecord): number | null {
+  /**
+   * 한 판 끝: 기록 저장 + 서버로 올릴 대기열에 넣음.
+   * 축하는 수학과 합친 "번 별" 기준(에이스 지갑), 뱃지는 한자에서 번 별 기준.
+   * 기록은 지우지 않음(별 계산에 쓰임). 오래된 판은 문제별 내용만 비워 저장 공간을 아낌.
+   */
+  addRecord(rec: RoundRecord): Milestone | null {
     const before = earnedStars(state);
-    const records = [rec, ...state.records].slice(0, 400);
-    const after = before + rec.stars;
-    const celebrated = [...state.celebrated];
-    let hit: number | null = null;
-    for (let m = Math.floor(before / 10) * 10 + 10; m <= after; m += 10) {
-      if (!celebrated.includes(m)) { celebrated.push(m); hit = m; }
-    }
-    commit({ records, celebrated });
-    return hit;
+    const records = [rec, ...state.records].map((r, i) => (i >= 300 && r.items?.length ? { ...r, items: [] } : r));
+    commit({ records });
+    markDirty('hanja', rec.ts);
+    notifyWallet();
+    const after = earnedStars(state);
+    const badge = BADGES.find(b => before < b.need && after >= b.need) || null;
+    const cel = takeCelebration();
+    if (!cel && !badge) return null;
+    return { value: cel?.value ?? 0, hall: !!cel?.hall, badge: badge ? badge.name : null };
   },
-  /** 별 쓰기. 남은 별이 모자라면 false */
-  spend(kind: Spend['kind'], amount: number, note: string): boolean {
-    if (amount <= 0) return true;
-    if (balanceOf(state) < amount) return false;
-    commit({ spends: [...state.spends, { ts: Date.now(), kind, amount, note }] });
-    return true;
-  },
-  buyChance(ch: Chance): boolean {
-    if (!actions.spend('chance', ch.price, ch.name)) return false;
-    const coupon: Coupon = { id: `${Date.now()}-${Math.floor(Math.random() * 1000)}`, emoji: ch.emoji, name: ch.name, desc: ch.desc, price: ch.price, boughtAt: Date.now() };
-    commit({ coupons: [coupon, ...state.coupons] });
-    return true;
-  },
-  useCoupon(id: string) {
-    commit({ coupons: state.coupons.map(c => (c.id === id ? { ...c, usedAt: Date.now() } : c)) });
+  /** 힌트에 별 쓰기 (에이스 지갑 공통 장부, 1회 1개). 남은 별이 모자라면 false */
+  spendHint(note: string): boolean {
+    return spendHint('hanja', note);
   },
   /** 부모가 "이 묶음은 이미 알아요"로 표시 → 4번 칸에서 시작 */
   markKnown(chars: string[], today: number, interval: number) {

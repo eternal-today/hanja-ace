@@ -3,7 +3,10 @@ import { motion } from 'motion/react';
 import { BookOpen, ChevronRight, Ear, Gift, Home, Languages, PlayCircle, Search, Sparkles, Star, Type } from 'lucide-react';
 import { RoundKind } from '../types';
 import { STAGES, charsOfStage } from '../data';
-import { activeCoupons, balanceOf, useStore } from '../engine/store';
+import { useStore } from '../engine/store';
+import { couponState, coupons as aceCoupons, mathWishCoupons, useWallet } from '../ace/wallet';
+import { TIERS } from '../ace/chances';
+import { goHome } from '../ace/links';
 import { canSpeak, poolStatus } from '../engine/quiz';
 import { toneOf } from '../engine/srs';
 import { loadRound } from '../engine/resume';
@@ -21,9 +24,10 @@ interface Props {
 export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }: Props) {
   const store = useStore();
   const { config, cards } = store;
-  const balance = balanceOf(store);
+  const wallet = useWallet();   // 수학·한자 합산 별
+  const balance = wallet.balance;
   const status = poolStatus(config, cards);
-  const coupons = activeCoupons(store);
+  const coupons = [...aceCoupons().filter(c => couponState(c) === 'active'), ...mathWishCoupons()];
   const name = config.childName?.trim();
   const saved = loadRound();   // 풀다 멈춘 판
 
@@ -42,9 +46,9 @@ export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }
 
   const unseen8 = charsOfStage('8급').filter(c => !cards[c]).length;
   const showCheck = unseen8 >= 20;
-  const affordable = config.chances.filter(c => c.on).sort((a, b) => a.price - b.price);
-  const nextChance = affordable.find(c => c.price > balance) || null;
-  const canBuy = affordable.filter(c => c.price <= balance).length;
+  // 찬스는 에이스 홈에서 바꿈 (가벼운 30 · 중간 60 · 큰 150 · 특별 300)
+  const nextChance = TIERS.find(t => t.price > balance) || null;
+  const canBuy = TIERS.filter(t => t.price <= balance);
 
   const sub = status.total === 0 ? '부모님 화면에서 묶음을 골라 주세요'
     : status.unseen > 0 && status.due > 0 ? `새 글자와 복습 ${status.due}자가 기다려요`
@@ -54,10 +58,16 @@ export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <header className="flex justify-between items-center mb-6 max-w-lg landscape:max-w-5xl mx-auto w-full">
-        <button onClick={onHome} aria-label="처음 화면"
-          className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 text-slate-400">
-          <Home size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={onHome} aria-label="처음 화면"
+            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 text-slate-400">
+            <Home size={20} />
+          </button>
+          <button onClick={() => goHome()} aria-label="에이스 홈"
+            className="h-12 px-4 bg-white rounded-2xl flex items-center gap-1.5 shadow-sm border border-slate-100 text-sm font-black text-slate-600 active:scale-95 transition-transform">
+            <Star size={16} className="text-amber-500 fill-amber-500" />에이스 홈
+          </button>
+        </div>
         <button onClick={onShop} aria-label="내 별과 찬스 가게"
           className="bg-white px-5 py-2.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-95 transition-transform">
           <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
@@ -162,7 +172,7 @@ export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }
           <button onClick={onShop}
             className="w-full bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-[2rem] p-5 text-left active:scale-[0.98] transition-transform space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-black text-amber-800 flex items-center gap-2"><Gift size={18} />찬스 가게</span>
+              <span className="font-black text-amber-800 flex items-center gap-2"><Gift size={18} />내 별과 찬스</span>
               <span className="text-xs font-bold text-amber-600 flex items-center">구경하기<ChevronRight size={14} /></span>
             </div>
             {coupons.length > 0 && (
@@ -170,13 +180,16 @@ export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }
                 🎟️ 내 찬스 쿠폰 {coupons.length}장 <span className="text-xs font-bold text-amber-500">· 엄마 아빠에게 보여 주세요</span>
               </div>
             )}
-            {canBuy > 0
-              ? <p className="text-sm font-bold text-amber-700">지금 바꿀 수 있는 찬스가 {canBuy}개 있어요!</p>
+            {wallet.hallCount > 0 && (
+              <p className="text-xs font-black text-brand-700">👑 명예의 전당 {wallet.hallCount}번 · 수학과 한자로 모은 별 {wallet.earned}개</p>
+            )}
+            {canBuy.length > 0
+              ? <p className="text-sm font-bold text-amber-700">지금 {canBuy[canBuy.length - 1].name}까지 바꿀 수 있어요! 에이스 홈에서 바꿔요</p>
               : nextChance
                 ? (
                   <div>
                     <div className="flex justify-between text-xs font-bold mb-1.5">
-                      <span className="text-amber-700">{nextChance.emoji} {nextChance.name}까지</span>
+                      <span className="text-amber-700">🎟️ {nextChance.name}까지</span>
                       <span className="text-amber-600">별 {nextChance.price - balance}개 남았어요</span>
                     </div>
                     <div className="bg-white h-2.5 rounded-full overflow-hidden">

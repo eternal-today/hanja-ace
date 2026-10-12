@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Baby, ChevronRight, User } from 'lucide-react';
 import { RoundKind } from './types';
-import { BADGES, useStore } from './engine/store';
+import { Milestone, useStore } from './engine/store';
+import { initCelebration, migrateHanjaLegacy } from './ace/wallet';
+import { startAceSync } from './ace/aceSync';
 import { Overlays, askPin, fireConfetti } from './components/ui';
 import ChildHome from './screens/ChildHome';
 import Play from './screens/Play';
@@ -13,13 +15,17 @@ import { SavedRound, loadRound } from './engine/resume';
 
 type ChildView = 'home' | 'play' | 'dogam' | 'shop';
 
+// 첫 화면 그리기 전에: 첫날 장부·쿠폰을 에이스 지갑으로 옮기고(한 번만), 축하 목록 준비
+migrateHanjaLegacy();
+initCelebration();
+
 export default function App() {
   const store = useStore();
   const [screen, setScreen] = useState<'landing' | 'parent' | 'child'>('landing');
   const [view, setView] = useState<ChildView>('home');
   const [kind, setKind] = useState<RoundKind>('daily');
   const [roundKey, setRoundKey] = useState(0);
-  const [milestone, setMilestone] = useState<number | null>(null);
+  const [milestone, setMilestone] = useState<Milestone | null>(null);
   const [resume, setResume] = useState<SavedRound | null>(null);
   const playBackRef = useRef<null | (() => void)>(null);
 
@@ -51,6 +57,7 @@ export default function App() {
   const name = store.config.childName?.trim();
 
   useEffect(() => {
+    startAceSync({ pullMath: true });
     const fallback = document.getElementById('loading-fallback');
     if (fallback) fallback.style.display = 'none';
   }, []);
@@ -61,7 +68,6 @@ export default function App() {
     if (!saved) { setView('home'); return; }
     setResume(saved); setKind(saved.kind); setRoundKey(n => n + 1); setView('play');
   };
-  const badge = milestone ? BADGES.find(b => b.need === milestone) : null;
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 selection:bg-brand-100 selection:text-brand-900">
@@ -124,7 +130,7 @@ export default function App() {
             {view === 'home' && <ChildHome onHome={() => setScreen('landing')} onStart={start} onResume={resumeRound} onDogam={() => setView('dogam')} onShop={() => setView('shop')} />}
             {view === 'play' && (
               <Play key={roundKey} kind={kind} resume={resume} backRef={playBackRef} onExit={() => setView('home')} onAgain={() => start(kind)}
-                onMilestone={m => { setMilestone(m); fireConfetti(m % 50 === 0 ? 'epic' : 'normal'); }} onOpenShop={() => setView('shop')} />
+                onMilestone={m => { setMilestone(m); fireConfetti(m.hall ? 'epic' : m.value % 50 === 0 ? 'big' : 'normal'); }} onOpenShop={() => setView('shop')} />
             )}
             {view === 'dogam' && <Dogam onBack={() => setView('home')} />}
             {view === 'shop' && <Shop onBack={() => setView('home')} />}
@@ -140,10 +146,15 @@ export default function App() {
             <motion.div initial={{ scale: 0.5, y: 40 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.5, opacity: 0 }}
               transition={{ type: 'spring', damping: 14 }} onClick={e => e.stopPropagation()}
               className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full text-center shadow-2xl">
-              <div className="text-7xl mb-4">{badge ? '🏅' : '🎉'}</div>
-              <h2 className="text-3xl font-black text-slate-900 font-display mb-2">별 {milestone}개를 벌었어!</h2>
+              <div className="text-7xl mb-4">{milestone.hall ? '👑' : milestone.badge ? '🏅' : '🎉'}</div>
+              <h2 className={`text-3xl font-black font-display mb-2 ${milestone.hall ? 'text-brand-600' : 'text-slate-900'}`}>
+                {milestone.hall ? '명예의 전당 입성!' : milestone.value ? `별 ${milestone.value}개를 모았어!` : '새 뱃지!'}
+              </h2>
+              {milestone.value > 0 && <p className="text-xs font-bold text-slate-400 mb-2">수학과 한자에서 모은 별 {milestone.value}개</p>}
               <p className="text-slate-500 font-medium">
-                {badge ? <>새 뱃지 <strong className="text-brand-600">‘{badge.name}’</strong>를 받았어요!</> : <>{name ? `${name}, ` : ''}정말 대단해! 계속 모아 보자 ⭐</>}
+                {milestone.badge
+                  ? <>한자 뱃지 <strong className="text-brand-600">‘{milestone.badge}’</strong>를 받았어요!</>
+                  : milestone.hall ? <>{name ? `${name}는 ` : ''}진정한 에이스야 👑</> : <>{name ? `${name}, ` : ''}정말 대단해! 계속 모아 보자 ⭐</>}
               </p>
               <button onClick={() => setMilestone(null)} className="btn-primary w-full mt-6 py-4 text-lg">좋아! 🙌</button>
             </motion.div>

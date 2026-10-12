@@ -63,6 +63,7 @@ export interface RoundRecord {
   correct: number;
   total: number;
   stars: number;        // 이 판에서 번 별
+  lowAcc?: boolean;     // 정답이 40%보다 적어 별을 받지 못한 판
   hintsFree: number;
   hintsPaid: number;
   groupNames: string[];

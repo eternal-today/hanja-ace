@@ -3,9 +3,11 @@ import {
   Award, Check, CheckCircle2, ChevronLeft, ChevronRight, Database, Gift, History, Home, Lightbulb, Lock,
   Plus, Settings, Smartphone, Sparkles, Star, Trash2, XCircle,
 } from 'lucide-react';
-import { Chance, Config, RoundRecord } from '../types';
+import { Config, RoundRecord } from '../types';
 import { GROUPS, GROUP_BY_ID, HANJA, STAGES, STAGES_WITH_WORDS, charsOfStage, hunEum } from '../data';
-import { DEFAULT_CHANCES, MAX_COUNT, MIN_COUNT, actions, activeCoupons, balanceOf, earnedStars, getState, spentStars, useStore } from '../engine/store';
+import { MAX_COUNT, MIN_COUNT, actions, earnedStars, getState, useStore } from '../engine/store';
+import { HINT_COST, couponState, coupons as aceCoupons, mathWishCoupons, useWallet } from '../ace/wallet';
+import { goHome } from '../ace/links';
 import { freeHints, poolChars } from '../engine/quiz';
 import { INTERVALS, dayIndex, toneOf } from '../engine/srs';
 import { toast } from '../components/ui';
@@ -50,10 +52,8 @@ export default function Parent({ onHome }: { onHome: () => void }) {
   const pool = poolChars(draft);
   const hasWords = STAGES_WITH_WORDS.has(stage);
 
-  // ── 찬스 메뉴 (바꾸면 바로 저장) ──
-  const chances = store.config.chances;
-  const saveChances = (next: Chance[]) => actions.saveConfig({ ...getState().config, chances: next });
-  const patchChance = (id: string, patch: Partial<Chance>) => saveChances(chances.map(c => (c.id === id ? { ...c, ...patch } : c)));
+  // ── 별·쿠폰: 수학과 함께 쓰는 에이스 지갑 ──
+  const wallet = useWallet();
 
   // ── 기록 요약 ──
   const today = dayIndex();
@@ -63,8 +63,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
   const dueNow = savedPool.filter(c => cards[c] && cards[c].due <= today).length;
   const weak = Object.entries(cards).filter(([, v]) => v.wrong > 0).sort((a, b) => b[1].wrong - a[1].wrong).slice(0, 10);
   const pairs = Object.entries(store.confusions).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  const coupons = activeCoupons(store);
-  const usedCoupons = store.coupons.filter(c => c.usedAt).slice(0, 8);
+  const coupons = [...aceCoupons().filter(c => couponState(c) === 'active'), ...mathWishCoupons()];
 
   const exportBackup = () => {
     const data: Record<string, string> = {};
@@ -244,9 +243,8 @@ export default function Parent({ onHome }: { onHome: () => void }) {
                 (10문제 2개, 20문제 3개, 30문제 4개. 어려움 난이도이거나 새 글자가 절반 이상인 판은 1개 더)
                 남은 힌트는 다음 판으로 넘어가지 않습니다.
               </p>
-              <div className="space-y-3">
-                <Label>기본 힌트를 다 쓴 뒤, 힌트 한 번에 드는 별</Label>
-                <Stepper value={draft.hintCost} min={0} max={5} unit="개" onChange={n => setDraft({ ...draft, hintCost: n })} />
+              <div className="space-y-2">
+                <p className="text-sm text-slate-500">기본 힌트를 다 쓴 뒤에는 힌트 한 번에 <strong className="text-slate-700">별 {HINT_COST}개</strong>를 씁니다. (수학 에이스와 같음)</p>
                 <p className="text-[11px] text-slate-400 leading-relaxed">힌트를 보고 맞힌 글자는 기억 상자에서 올라가지 않고, 틀린 글자는 첫 칸으로 돌아갑니다.</p>
               </div>
             </Card>
@@ -324,80 +322,26 @@ export default function Parent({ onHome }: { onHome: () => void }) {
           </div>
         )}
 
-        {/* ══════════ 찬스와 별 ══════════ */}
+        {/* ══════════ 찬스와 별 (에이스 홈으로 옮김) ══════════ */}
         {tab === 'chance' && (
           <div className="space-y-6 animate-slide-up">
             <div className="grid grid-cols-3 gap-3">
-              {[['가진 별', balanceOf(store), 'text-amber-600'], ['번 별', earnedStars(store), 'text-emerald-600'], ['쓴 별', spentStars(store), 'text-slate-600']].map(([label, n, color]) => (
+              {[['남은 별 (합산)', wallet.balance, 'text-amber-600'], ['한자에서 번 별', earnedStars(store), 'text-emerald-600'], ['쓴 별 (합산)', wallet.spent, 'text-slate-600']].map(([label, n, color]) => (
                 <div key={label as string} className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
                   <div className={`text-2xl font-black font-display ${color}`}>{n as number}</div>
                   <div className="text-[11px] font-bold text-slate-400 mt-1">{label as string}</div>
                 </div>
               ))}
             </div>
-
-            <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5">
-              <div className="font-black text-amber-700 mb-3">🎟️ 아이가 바꾼 찬스 쿠폰 {coupons.length}장</div>
-              {coupons.length === 0
-                ? <p className="text-sm text-amber-600 font-medium">사용을 기다리는 쿠폰이 없습니다.</p>
-                : (
-                  <div className="space-y-2">
-                    {coupons.map(c => (
-                      <div key={c.id} className="flex items-center justify-between gap-3 bg-white rounded-xl px-4 py-3 border border-amber-100">
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold text-slate-700">{c.emoji} {c.name} <span className="text-[11px] text-slate-400 font-medium">· 별 {c.price}개</span></div>
-                          <div className="text-[11px] text-slate-400 truncate">{c.desc} · {new Date(c.boughtAt).toLocaleDateString('ko-KR')}</div>
-                        </div>
-                        <button onClick={() => { actions.useCoupon(c.id); toast('사용 완료로 표시했어요'); }}
-                          className="shrink-0 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white px-3 py-2 rounded-lg transition-colors">사용 완료</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              <p className="text-[11px] text-amber-500 mt-3">찬스를 들어주셨다면 "사용 완료"를 눌러 주세요. 아이 화면에서 PIN으로 처리할 수도 있습니다.</p>
-              {usedCoupons.length > 0 && (
-                <p className="text-[11px] text-amber-600/70 mt-2">최근 사용: {usedCoupons.map(c => c.name).join(', ')}</p>
-              )}
-            </div>
-
             <Card>
-              <Title icon={<Gift size={18} className="text-trust-600" />}>찬스 메뉴 편집</Title>
+              <Title icon={<Gift size={18} className="text-trust-600" />}>찬스와 쿠폰은 에이스 홈에서</Title>
               <p className="text-sm text-slate-500 leading-relaxed">
-                이름, 설명, 별 가격을 우리 집에 맞게 고치세요. 금액 상한은 설명에 적으면 쿠폰에 함께 보입니다. 바꾸면 바로 저장됩니다.
+                별은 수학 에이스와 함께 쓰는 지갑 하나로 합쳤어요. 찬스 가게, 쿠폰 사용 처리, 잘못 산 쿠폰 되돌리기, 별 장부는 에이스 홈의 부모님 모드에서 해요.
               </p>
-              <div className="space-y-3">
-                {chances.map(c => (
-                  <div key={c.id} className={`rounded-xl border-2 p-3 space-y-2 ${c.on ? 'border-slate-100 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
-                    <div className="flex items-center gap-2">
-                      <input className="w-12 text-center text-xl rounded-lg border border-slate-200 py-1.5 bg-white" value={c.emoji} maxLength={4} aria-label="그림"
-                        onChange={e => patchChance(c.id, { emoji: e.target.value })} />
-                      <input className="flex-1 min-w-0 font-bold text-sm rounded-lg border border-slate-200 px-3 py-2 bg-white" value={c.name} maxLength={16} aria-label="찬스 이름"
-                        onChange={e => patchChance(c.id, { name: e.target.value })} />
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Star size={14} className="fill-amber-400 text-amber-400" />
-                        <input type="number" inputMode="numeric" min={1} max={999} className="w-16 text-center font-black text-sm rounded-lg border border-slate-200 py-2 bg-white" value={c.price} aria-label="별 가격"
-                          onChange={e => patchChance(c.id, { price: Math.max(1, Math.min(999, parseInt(e.target.value) || 1)) })} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input className="flex-1 min-w-0 text-sm rounded-lg border border-slate-200 px-3 py-2 bg-white text-slate-600" value={c.desc} maxLength={40} aria-label="설명"
-                        onChange={e => patchChance(c.id, { desc: e.target.value })} />
-                      <button onClick={() => patchChance(c.id, { on: !c.on })}
-                        className={`shrink-0 text-xs font-bold px-3 py-2 rounded-lg border ${c.on ? 'border-trust-200 text-trust-600 bg-trust-50' : 'border-slate-200 text-slate-400 bg-white'}`}>{c.on ? '보임' : '숨김'}</button>
-                      <button aria-label="삭제" onClick={() => { if (window.confirm(`"${c.name}"를 메뉴에서 지울까요?`)) saveChances(chances.filter(x => x.id !== c.id)); }}
-                        className="shrink-0 p-2 text-slate-300 hover:text-rose-500"><Trash2 size={16} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button className="btn-secondary py-2.5 px-4 text-sm flex items-center gap-1.5"
-                  onClick={() => saveChances([...chances, { id: `u${Date.now()}`, emoji: '🎁', name: '새 찬스', desc: '설명을 적어 주세요', price: 30, on: true }])}>
-                  <Plus size={16} />찬스 추가
-                </button>
-                <button className="py-2.5 px-4 text-sm font-bold text-slate-400 hover:underline"
-                  onClick={() => { if (window.confirm('찬스 메뉴를 처음의 15개로 되돌릴까요?')) saveChances(DEFAULT_CHANCES); }}>기본 메뉴로 되돌리기</button>
-              </div>
+              {coupons.length > 0 && <p className="text-sm font-bold text-amber-600">사용을 기다리는 쿠폰 {coupons.length}장</p>}
+              <button className="btn-secondary w-full flex items-center justify-center gap-2" onClick={() => goHome()}>
+                <Star size={16} className="text-amber-500 fill-amber-500" />에이스 홈 열기
+              </button>
             </Card>
           </div>
         )}
