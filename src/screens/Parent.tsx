@@ -103,7 +103,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
     <div className="min-h-[100dvh] bg-slate-50 pb-24">
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onHome} aria-label="처음 화면" className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Home size={20} className="text-slate-600" /></button>
+          <button onClick={onHome} aria-label="아이 홈" className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Home size={20} className="text-slate-600" /></button>
           <h2 className="font-bold text-slate-900">부모님 설정</h2>
         </div>
         <div className="bg-trust-100 text-trust-700 text-[10px] font-black px-2 py-1 rounded-md tracking-wider">ADMIN</div>

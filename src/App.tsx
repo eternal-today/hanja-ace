@@ -1,19 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Baby, ChevronRight, User } from 'lucide-react';
 import { RoundKind } from './types';
-import { Milestone, useStore } from './engine/store';
+import { BADGES, Milestone, useStore } from './engine/store';
 import { initCelebration, migrateHanjaLegacy } from './ace/wallet';
 import { startAceSync } from './ace/aceSync';
+import { AceRewardsSheet } from './ace/Rewards';
 import { Overlays, askPin, fireConfetti } from './components/ui';
 import ChildHome from './screens/ChildHome';
 import Play from './screens/Play';
 import Dogam from './screens/Dogam';
-import Shop from './screens/Shop';
 import Parent from './screens/Parent';
 import { SavedRound, loadRound } from './engine/resume';
 
-type ChildView = 'home' | 'play' | 'dogam' | 'shop';
+type ChildView = 'home' | 'play' | 'dogam';
 
 // 첫 화면 그리기 전에: 첫날 장부·쿠폰을 에이스 지갑으로 옮기고(한 번만), 축하 목록 준비
 migrateHanjaLegacy();
@@ -21,39 +20,42 @@ initCelebration();
 
 export default function App() {
   const store = useStore();
-  const [screen, setScreen] = useState<'landing' | 'parent' | 'child'>('landing');
+  const [screen, setScreen] = useState<'parent' | 'child'>('child');
   const [view, setView] = useState<ChildView>('home');
   const [kind, setKind] = useState<RoundKind>('daily');
   const [roundKey, setRoundKey] = useState(0);
   const [milestone, setMilestone] = useState<Milestone | null>(null);
+  const [rewardsOpen, setRewardsOpen] = useState(false);
   const [resume, setResume] = useState<SavedRound | null>(null);
   const playBackRef = useRef<null | (() => void)>(null);
 
   // ── 기기의 뒤로가기 ──
-  // 첫 화면을 벗어나면 기록에 "받침" 한 칸을 넣어 두고, 뒤로가기가 눌리면 앱을 떠나지 않고
-  // 풀이 중 → 확인창 / 도감·가게 → 아이 홈 / 아이 홈·부모 화면 → 첫 화면으로 보냄
-  const nav = useRef({ screen, view });
-  nav.current = { screen, view };
+  // 아이 홈을 벗어나면 기록에 "받침" 한 칸을 넣어 두고, 뒤로가기가 눌리면 앱을 떠나지 않고
+  // 풀이 중 → 확인창 / 도감·부모 화면 → 아이 홈으로 보냄. 아이 홈에서는 평소처럼 나감
+  const atHome = screen === 'child' && view === 'home';
+  const nav = useRef({ screen, view, rewardsOpen });
+  nav.current = { screen, view, rewardsOpen };
   const guard = useRef(false);
   useEffect(() => {
     const onPop = () => {
       guard.current = false;
       const cur = nav.current;
-      if (cur.screen === 'landing') return;                 // 첫 화면에서는 평소처럼 나감
-      history.pushState({ hanja: 1 }, '');                   // 받침을 다시 깔아 둠
-      guard.current = true;
-      if (cur.screen === 'parent') setScreen('landing');
-      else if (cur.view === 'play') { if (playBackRef.current) playBackRef.current(); else setView('home'); }
-      else if (cur.view === 'home') setScreen('landing');
-      else setView('home');
+      if (cur.screen === 'child' && cur.view === 'play') {
+        history.pushState({ hanja: 1 }, '');                 // 풀이 중에는 받침을 다시 깔고 확인창
+        guard.current = true;
+        if (playBackRef.current) playBackRef.current(); else setView('home');
+        return;
+      }
+      if (cur.screen === 'child' && cur.view === 'home') return;   // 아이 홈: 평소처럼 나감
+      setScreen('child'); setView('home');
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   useEffect(() => {
-    if (screen !== 'landing' && !guard.current) { history.pushState({ hanja: 1 }, ''); guard.current = true; }
-    else if (screen === 'landing' && guard.current) { guard.current = false; history.back(); }   // 남은 받침 치우기
-  }, [screen]);
+    if (!atHome && !guard.current) { history.pushState({ hanja: 1 }, ''); guard.current = true; }
+    else if (atHome && guard.current) { guard.current = false; history.back(); }   // 남은 받침 치우기
+  }, [atHome]);
   const name = store.config.childName?.trim();
 
   useEffect(() => {
@@ -74,69 +76,27 @@ export default function App() {
       <Overlays pin={store.pin} />
 
       <AnimatePresence mode="wait">
-        {screen === 'landing' && (
-          <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-gradient-to-br from-brand-50 via-white to-amber-50 flex flex-col items-center justify-center p-6 overflow-y-auto">
-            <div className="absolute inset-0 bg-[radial-gradient(#d8c9ff_1px,transparent_1px)] [background-size:28px_28px] opacity-40" />
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.15 }}
-              className="relative z-10 text-center max-w-sm w-full">
-              <motion.div initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 3 }} transition={{ type: 'spring', damping: 12, delay: 0.2 }}
-                className="w-24 h-24 bg-gradient-to-br from-brand-500 to-brand-700 rounded-[2rem] mx-auto mb-7 flex items-center justify-center shadow-2xl shadow-brand-300/60">
-                <span className="hanja text-6xl text-white">漢</span>
-              </motion.div>
-              <h1 className="text-4xl font-black text-slate-900 mb-3 leading-tight font-display">우리집 한자 에이스</h1>
-              <p className="text-slate-500 mb-10 leading-relaxed font-medium">한 글자씩 모으는 한자 도감<br />8급부터 차근차근</p>
-              <div className="space-y-4">
-                <motion.button whileTap={{ scale: 0.97 }}
-                  className="w-full group flex items-center justify-between bg-white border-2 border-slate-200 p-5 rounded-3xl hover:border-trust-500 hover:bg-trust-50 transition-all shadow-sm"
-                  onClick={() => askPin('', () => setScreen('parent'))}>
-                  <div className="flex items-center gap-4 text-left">
-                    <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center group-hover:bg-trust-100 transition-colors">
-                      <User size={24} className="text-slate-600 group-hover:text-trust-600" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900">부모님 모드</div>
-                      <div className="text-xs text-slate-500">급수·묶음 설정, 찬스, 기록 확인</div>
-                    </div>
-                  </div>
-                  <ChevronRight size={20} className="text-slate-300 group-hover:text-trust-500" />
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.97 }}
-                  className="w-full group flex items-center justify-between bg-gradient-to-br from-brand-500 to-brand-600 p-5 rounded-3xl hover:from-brand-600 hover:to-brand-700 transition-all shadow-xl shadow-brand-200"
-                  onClick={() => { setScreen('child'); setView('home'); }}>
-                  <div className="flex items-center gap-4 text-left">
-                    <div className="w-12 h-12 bg-white/25 rounded-2xl flex items-center justify-center"><Baby size={24} className="text-white" /></div>
-                    <div>
-                      <div className="font-bold text-white text-lg">아이 모드</div>
-                      <div className="text-xs text-white/80">한자 놀이하고 별 모으기</div>
-                    </div>
-                  </div>
-                  <ChevronRight size={20} className="text-white/60" />
-                </motion.button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-
         {screen === 'parent' && (
           <motion.div key="parent" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-            <Parent onHome={() => setScreen('landing')} />
+            <Parent onHome={() => { setScreen('child'); setView('home'); }} />
           </motion.div>
         )}
 
         {screen === 'child' && (
           <motion.div key="child" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="h-[100dvh] bg-gradient-to-b from-brand-50 to-white flex flex-col overflow-hidden">
-            {view === 'home' && <ChildHome onHome={() => setScreen('landing')} onStart={start} onResume={resumeRound} onDogam={() => setView('dogam')} onShop={() => setView('shop')} />}
+            {view === 'home' && <ChildHome onParent={() => askPin('', () => setScreen('parent'))} onStart={start} onResume={resumeRound} onDogam={() => setView('dogam')} onRewards={() => setRewardsOpen(true)} />}
             {view === 'play' && (
               <Play key={roundKey} kind={kind} resume={resume} backRef={playBackRef} onExit={() => setView('home')} onAgain={() => start(kind)}
-                onMilestone={m => { setMilestone(m); fireConfetti(m.hall ? 'epic' : m.value % 50 === 0 ? 'big' : 'normal'); }} onOpenShop={() => setView('shop')} />
+                onMilestone={m => { setMilestone(m); fireConfetti(m.hall ? 'epic' : m.value % 50 === 0 ? 'big' : 'normal'); }} onOpenShop={() => setRewardsOpen(true)} />
             )}
             {view === 'dogam' && <Dogam onBack={() => setView('home')} />}
-            {view === 'shop' && <Shop onBack={() => setView('home')} />}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 내 보상 (별 잔액·내 보상 카드·결과 화면의 별을 누르면) */}
+      <AceRewardsSheet open={rewardsOpen && screen === 'child'} onClose={() => setRewardsOpen(false)} childName={name} subject="hanja" badges={BADGES} />
 
       {/* 번 별 10개마다 축하 */}
       <AnimatePresence>
