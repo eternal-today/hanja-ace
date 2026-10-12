@@ -5,6 +5,7 @@ import { Question, RoundItem, RoundKind, RoundRecord } from '../types';
 import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
 import { Milestone, actions, getState, useStore } from '../engine/store';
 import { HINT_COST, useWallet } from '../ace/wallet';
+import { geminiKey } from '../ace/settings';
 import { answerText, freeHints, hintLines, nextQuestion, planRound, poolChars, questionText, shuffle, wordsFor } from '../engine/quiz';
 import { Tone, applyAnswer, toneOf } from '../engine/srs';
 import { fireConfetti, speak, tap, toast } from '../components/ui';
@@ -182,7 +183,8 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
       setPhase('retry');
     } else enterResult();
 
-    if (config.geminiKey) {
+    const aiKey = geminiKey(config.geminiKey);   // 에이스 홈에 넣은 키가 먼저
+    if (aiKey) {
       setFeedbackLoading(true);
       try {
         const wrong = finalItems.filter(i => !i.ok);
@@ -192,7 +194,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
           ? `${who}의 오늘 한자 공부 결과야. 총 ${total}문제 중 ${correct}개 정답.\n틀린 문제: ${detail}\n\n아이 눈높이(반말)로 따뜻하게 피드백해 줘. 1) 잘한 점을 구체적으로 칭찬하고 2) 틀린 글자 가운데 딱 하나만 골라 다음에 다시 보자고 말하고 3) 힘나는 말로 마무리해. 이모지 적당히, 3문장. 절대 혼내지 마. 한자의 뜻이나 유래를 새로 지어내서 설명하지 말고, 위에 적힌 정답만 사용해.`
           : `${who}가 오늘 한자 ${total}문제를 전부 맞혔어! 이름을 불러 주면서 아주 신나고 따뜻하게 칭찬해 줘. 반말, 이모지 듬뿍, 2문장. 한자의 뜻이나 유래를 새로 지어내서 설명하지는 마.`;
         const { callGemini } = await import('../geminiUtils');   // 키가 있을 때만 내려받음
-        const text = await callGemini({ apiKey: config.geminiKey, prompt, thinkingBudget: 128 });
+        const text = await callGemini({ apiKey: aiKey, prompt, thinkingBudget: 128 });
         setFeedback(text.trim());
       } catch {
         setFeedback('');

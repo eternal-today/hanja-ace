@@ -7,7 +7,8 @@ import { Config, RoundRecord } from '../types';
 import { GROUPS, GROUP_BY_ID, HANJA, STAGES, STAGES_WITH_WORDS, charsOfStage, hunEum } from '../data';
 import { MAX_COUNT, MIN_COUNT, actions, earnedStars, getState, useStore } from '../engine/store';
 import { HINT_COST, couponState, coupons as aceCoupons, mathWishCoupons, useWallet } from '../ace/wallet';
-import { goHome } from '../ace/links';
+import { LINKS, goHome } from '../ace/links';
+import { hubGeminiKey, maskKey } from '../ace/settings';
 import { freeHints, poolChars } from '../engine/quiz';
 import { INTERVALS, dayIndex, toneOf } from '../engine/srs';
 import { toast } from '../components/ui';
@@ -272,11 +273,17 @@ export default function Parent({ onHome }: { onHome: () => void }) {
               <Card dim>
                 <Title icon={<Sparkles size={18} className="text-slate-400" />}>AI 칭찬 피드백 (선택)</Title>
                 <Label>Gemini API Key</Label>
-                <input type="password" className="input-field bg-slate-50" placeholder="AIza..."
-                  value={draft.geminiKey} onChange={e => setDraft({ ...draft, geminiKey: e.target.value })} />
+                {hubGeminiKey() ? (
+                  <p className="text-sm text-slate-500 bg-slate-50 rounded-xl p-3">
+                    에이스 홈에 넣은 키({maskKey(hubGeminiKey())})를 쓰고 있어요. 바꾸려면 <a href={LINKS.home} className="text-trust-600 font-bold underline">에이스 홈</a> 부모님 모드에서 바꿔요.
+                  </p>
+                ) : (
+                  <input type="password" className="input-field bg-slate-50" placeholder="AIza..."
+                    value={draft.geminiKey} onChange={e => setDraft({ ...draft, geminiKey: e.target.value })} />
+                )}
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                   한 판이 끝난 뒤의 칭찬 한마디에만 씁니다. 문제, 정답, 힌트는 검수한 데이터로만 만들고 AI가 관여하지 않습니다.
-                  같은 기기의 수학 에이스에 넣어 둔 키가 있으면 처음에 자동으로 가져옵니다. 저장 버튼을 눌러야 반영됩니다.
+                  에이스 홈 부모님 모드에 키를 넣으면 모든 에이스가 함께 써요.
                 </p>
               </Card>
 

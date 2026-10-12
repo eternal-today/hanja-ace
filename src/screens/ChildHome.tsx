@@ -6,7 +6,7 @@ import { STAGES, charsOfStage } from '../data';
 import { useStore } from '../engine/store';
 import { couponState, coupons as aceCoupons, mathWishCoupons, useWallet } from '../ace/wallet';
 import { TIERS } from '../ace/chances';
-import { goHome } from '../ace/links';
+import { AceNav } from '../ace/AceNav';
 import { canSpeak, poolStatus } from '../engine/quiz';
 import { toneOf } from '../engine/srs';
 import { loadRound } from '../engine/resume';
@@ -63,10 +63,7 @@ export default function ChildHome({ onHome, onStart, onResume, onDogam, onShop }
             className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 text-slate-400">
             <Home size={20} />
           </button>
-          <button onClick={() => goHome()} aria-label="에이스 홈"
-            className="h-12 px-4 bg-white rounded-2xl flex items-center gap-1.5 shadow-sm border border-slate-100 text-sm font-black text-slate-600 active:scale-95 transition-transform">
-            <Star size={16} className="text-amber-500 fill-amber-500" />에이스 홈
-          </button>
+          <AceNav current="hanja" />
         </div>
         <button onClick={onShop} aria-label="내 별과 찬스 가게"
           className="bg-white px-5 py-2.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-95 transition-transform">
