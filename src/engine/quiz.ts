@@ -266,7 +266,7 @@ export function chooseType(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: 
   if (kind === 'hun') return pickOne<QType>(['hun', 'hun', 'pick', 'pick', 'eum']);
   if (kind === 'listen') return canSpeak() ? 'listen' : 'pick';
   if (kind === 'word') return hasWord ? 'word' : 'hun';
-  if (kind === 'write') return firstMeet ? 'hun' : Math.random() < 0.75 ? 'write' : 'eum';
+  if (kind === 'write') return 'write';   // 새 글자도 바로 조립 (카드를 막 보고 왔으므로)
   if (kind === 'order') return order ? 'order' : 'hun';
   if (firstMeet) return 'hun';
   const m = ctx.config.modes;
@@ -291,8 +291,8 @@ export function nextQuestion(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet
     : kind === 'hun' ? ['hun', 'pick', 'eum']
       : kind === 'listen' ? (speak ? ['listen', 'pick', 'hun'] : ['pick', 'hun'])
         : kind === 'word' ? ['word', 'hun', 'pick']
-          : kind === 'write' ? ['write', 'eum', 'hun']
-            : kind === 'order' ? ['order', 'eum', 'hun']
+          : kind === 'write' ? ['write']
+            : kind === 'order' ? ['order']
               : [...(m.word ? ['word'] : []), ...(m.hun ? ['hun', 'pick', 'eum'] : []), ...(m.listen && speak ? ['listen'] : []),
                 ...(m.write ? ['write'] : []), ...(m.order && order ? ['order'] : []), 'hun', 'pick'] as QType[];
   const first = chooseType(c, kind, ctx, firstMeet);
@@ -301,9 +301,12 @@ export function nextQuestion(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet
     if (t === 'word') {
       if (!freshWords(c, ctx).length) continue;
     } else if (t === 'order' && !order) continue;
-    else if (ctx.used.has(`${t}:${c}`)) continue;
+    // 훈음 쓰기·필순 놀이에서는 같은 글자가 두 번 나오면 두 번 다 그 유형으로 (필순은 다른 획, 조각은 새로 섞음)
+    const twice = (kind === 'write' && t === 'write') || (kind === 'order' && t === 'order');
+    const key = `${t}:${c}`;
+    if (t !== 'word' && ctx.used.has(key) && !(twice && !ctx.used.has(key + '#2'))) continue;
     const q = makeQuestion(c, t, ctx, firstMeet);
-    ctx.used.add(`${q.type}:${q.c}`);
+    ctx.used.add(ctx.used.has(key) ? key + '#2' : key);
     return q;
   }
   return null;
