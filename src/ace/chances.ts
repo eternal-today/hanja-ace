@@ -55,8 +55,8 @@ export const CHANCES: Chance[] = [
   { id: 'b-bookstore', tier: 'big', emoji: '📗', name: '서점', desc: '서점에서 책 한 권 고르기' },
   { id: 'b-kidscafe', tier: 'big', emoji: '🎠', name: '키즈카페', desc: '키즈카페 가기' },
   { id: 'b-museum', tier: 'big', emoji: '🔬', name: '체험관', desc: '과학관, 박물관, 수학체험관 등 가기' },
-  { id: 'b-water', tier: 'big', emoji: '🏊', name: '물놀이', desc: '수영장이나 물놀이장 가기' },
   // 특별 찬스 (300개)
   { id: 's-lego', tier: 'special', emoji: '🏗️', name: '레고', desc: '레고 사기 (금액은 부모님이 정해요)' },
   { id: 's-park', tier: 'special', emoji: '🎡', name: '놀이공원', desc: '놀이공원이나 동물원, 아쿠아리움 가기' },
+  { id: 's-water', tier: 'special', emoji: '🏊', name: '물놀이', desc: '수영장이나 물놀이장 가기' },
 ];
