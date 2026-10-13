@@ -15,7 +15,7 @@ import { toast } from '../components/ui';
 import { StrokeSteps } from '../components/StrokeChar';
 import { ORDER_CHARS } from '../data/strokeChars';
 
-const KIND_LABEL: Record<string, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
+const KIND_LABEL: Record<string, string> = { daily: '오늘의 한 판', hun: '뜻·소리 고르기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
 
 const Card = ({ children, dim = false }: { children: React.ReactNode; dim?: boolean }) => (
   <section className={`bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5 ${dim ? 'opacity-70 hover:opacity-100 transition-opacity' : ''}`}>{children}</section>
@@ -261,7 +261,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
               <div className="space-y-3">
                 <Label>오늘의 한 판에 섞을 문제 유형</Label>
                 <div className="grid gap-2">
-                  {([['hun', '훈음 맞히기', '한자 → 훈음, 훈(뜻)만 보고 한자, 한자 → 음 고르기. 훈이 같은 글자(마을 村·里 등)는 한 문제의 보기에 함께 나오지 않습니다'], ['word', '낱말 읽기', '문장 속 한자어의 독음 맞히기 (시험에서 비중이 가장 큼)'], ['listen', '듣고 고르기', '훈음을 듣고 한자 고르기'],
+                  {([['hun', '뜻·소리 고르기', '한자 → 훈음, 훈(뜻)만 보고 한자, 한자 → 음 고르기. 훈이 같은 글자(마을 村·里 등)는 한 문제의 보기에 함께 나오지 않습니다'], ['word', '낱말 읽기', '문장 속 한자어의 독음 맞히기 (시험에서 비중이 가장 큼)'], ['listen', '듣고 고르기', '훈음을 듣고 한자 고르기'],
                     ['write', '훈음 쓰기', '음절 조각으로 표준 훈음 만들기 (녘/녁, 흰/힌 같은 철자 함정 포함). 시험의 훈음 쓰기 대비'],
                     ['order', '필순', '진하게 칠한 획이 몇 번째 획인지 고르기. 아래 목록의 글자만 나옵니다']] as const).map(([k, label, desc]) => (
                     <button key={k} onClick={() => setDraft({ ...draft, modes: { ...draft.modes, [k]: !draft.modes[k] } })}

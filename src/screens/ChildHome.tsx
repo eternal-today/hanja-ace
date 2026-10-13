@@ -11,7 +11,7 @@ import { canSpeak, poolStatus } from '../engine/quiz';
 import { toneOf } from '../engine/srs';
 import { loadRound } from '../engine/resume';
 
-const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
+const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '뜻·소리 고르기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
 
 interface Props {
   onParent: () => void;
@@ -104,7 +104,7 @@ export default function ChildHome({ onParent, onStart, onResume, onDogam, onRewa
             <div className="text-xs font-black text-slate-400 mb-2 px-1">골라 하는 놀이터</div>
             <div className="grid grid-cols-3 gap-3">
               {([
-                { kind: 'hun', label: '훈음 맞히기', icon: <Type size={26} />, on: true },
+                { kind: 'hun', label: '뜻·소리 고르기', icon: <Type size={26} />, on: true },
                 { kind: 'word', label: '낱말 읽기', icon: <Languages size={26} />, on: true },
                 { kind: 'listen', label: '듣고 고르기', icon: <Ear size={26} />, on: canSpeak() },
                 { kind: 'write', label: '훈음 쓰기', icon: <PenLine size={26} />, on: true },

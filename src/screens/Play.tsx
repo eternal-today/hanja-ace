@@ -12,7 +12,7 @@ import { Tone, applyAnswer, toneOf } from '../engine/srs';
 import { fireConfetti, speak, tap, toast } from '../components/ui';
 import { SavedRound, clearRound, saveRound } from '../engine/resume';
 
-const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
+const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '뜻·소리 고르기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
 
 function buildRound(kind: RoundKind) {
   const s = getState();
