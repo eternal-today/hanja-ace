@@ -57,7 +57,7 @@ function defaultConfig(): Config {
   } catch { /* 없음 */ }
   return {
     groupIds: GROUPS.filter(g => g.stage === '8급').map(g => g.id).concat(['7급-1']),
-    modes: { hun: true, word: true, listen: true },
+    modes: { hun: true, word: true, listen: true, write: true, order: true }, orderOff: [],
     count: 10, difficulty: 2, newPerRound: 3, hintCost: 1,
     childName: '', geminiKey: key, chances: DEFAULT_CHANCES,
   };
@@ -89,6 +89,7 @@ function load(): State {
   if (!Array.isArray(config.chances) || !config.chances.length) config.chances = DEFAULT_CHANCES;
   const known = new Set(GROUPS.map(g => g.id));
   config.groupIds = (config.groupIds || []).filter(id => known.has(id));
+  if (!Array.isArray(config.orderOff)) config.orderOff = [];
   return {
     config,
     cards: read(K.cards, {}),

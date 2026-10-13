@@ -6,12 +6,13 @@ import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
 import { Milestone, actions, getState, useStore } from '../engine/store';
 import { HINT_COST, useWallet } from '../ace/wallet';
 import { geminiKey } from '../ace/settings';
-import { answerText, freeHints, hintLines, nextQuestion, planRound, poolChars, questionText, shuffle, wordsFor } from '../engine/quiz';
+import { answerText, examHunEum, freeHints, hintLines, isRight, nextQuestion, planRound, poolChars, questionText, shownAnswer, shuffle, wordsFor } from '../engine/quiz';
+import { StrokeChar, StrokeSteps, loadStrokes } from '../components/StrokeChar';
 import { Tone, applyAnswer, toneOf } from '../engine/srs';
 import { fireConfetti, speak, tap, toast } from '../components/ui';
 import { SavedRound, clearRound, saveRound } from '../engine/resume';
 
-const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', check: '실력 확인' };
+const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
 
 function buildRound(kind: RoundKind) {
   const s = getState();
@@ -123,6 +124,9 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   const freeLeft = round.free - freeUsed;
   const name = config.childName?.trim();
 
+  // 필순 문제가 있는 판이면 획 데이터를 미리 내려받음
+  useEffect(() => { if (questions.some(x => x.type === 'order')) loadStrokes().catch(() => {}); }, []);
+
   // 듣고 고르기: 문제가 나오면 바로 읽어 줌
   useEffect(() => {
     if ((phase === 'solving' || phase === 'retry') && q?.type === 'listen') {
@@ -144,6 +148,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   if (!questions.length) {
     const text = kind === 'check' ? '8급 글자는 이미 모두 만났어요!'
       : kind === 'word' ? '낱말이 준비된 글자가 아직 없어요. 다른 놀이를 골라 볼까?'
+        : kind === 'order' ? '필순 문제를 낼 글자를 아직 못 만났어요. 필순 문제는 8급·7급 글자 가운데 일부만 나와요.'
         : '아직 공부할 글자가 없어요. 부모님 화면에서 묶음과 새 글자 수를 확인해 주세요.';
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 text-center">
@@ -177,7 +182,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     // 틀린 문제가 있으면 결과 전에 한 번씩 다시 풀어 봄 (별과 기록은 이미 정해졌고 바뀌지 않음)
     const wrongQs = kind === 'check' ? [] : questions.filter((_, i) => finalItems[i] && !finalItems[i].ok);
     if (wrongQs.length) {
-      setRetryQs(wrongQs.map(x => ({ ...x, options: shuffle(x.options), tiles: x.tiles ? shuffle(x.tiles) : x.tiles, isNew: false })));
+      setRetryQs(wrongQs.map(x => ({ ...x, options: x.type === 'order' ? x.options : shuffle(x.options), tiles: x.tiles ? shuffle(x.tiles) : x.tiles, isNew: false })));
       setRIdx(0);
       setPicked(null); setSel(null); setBuilt([]); setHint(null); setRemoved([]); setOkNow(null);
       setPhase('retry');
@@ -228,7 +233,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   const answer = (value: string) => {
     if (answered || Date.now() < readyAt.current) return;
     readyAt.current = Date.now() + GUARD_MS;
-    const ok = value === q.answer;
+    const ok = isRight(q, value);
     setOkNow(ok);
     if (inRetry) {   // 다시 풀기: 연습만. 별·기록·기억 상자는 그대로
       setPicked(value);
@@ -239,10 +244,9 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     const cards = { ...getState().cards };
     cards[q.c] = applyAnswer(cards[q.c], ok, hinted, kind === 'check');
     actions.setCards(cards);
-    if (!ok && q.type !== 'word' && HANJA[value]) actions.addConfusion(q.c, value);
+    if (!ok && (q.type === 'hun' || q.type === 'pick' || q.type === 'listen') && HANJA[value]) actions.addConfusion(q.c, value);
 
-    const shown = q.type === 'word' ? value : q.type === 'hun' ? (HANJA[value] ? hunEum(value) : value) : value;
-    const item: RoundItem = { c: q.c, type: q.type, q: questionText(q), ans: answerText(q), val: shown, ok, hint: hinted };
+    const item: RoundItem = { c: q.c, type: q.type, q: questionText(q), ans: answerText(q), val: shownAnswer(q, value), ok, hint: hinted };
     const next = [...items, item];
     setItems(next);
     setPicked(value);
@@ -457,9 +461,30 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
   const curTotal = inRetry ? retryQs.length : questions.length;
   const h = HANJA[q.c];
   const caption = q.type === 'hun' ? '이 한자의 뜻과 소리는?'
-    : q.type === 'pick' ? '알맞은 한자를 골라요'
+    : q.type === 'pick' ? '이 뜻을 가진 한자를 골라요'
+      : q.type === 'eum' ? '이 한자의 소리(음)는?'
+        : q.type === 'write' ? '시험처럼 훈과 음을 만들어요'
+          : q.type === 'order' ? '진하게 칠한 획은 몇 번째로 쓸까요?'
       : q.type === 'listen' ? '잘 듣고 알맞은 한자를 골라요'
         : '색칠된 낱말은 어떻게 읽을까요?';
+
+  /** 조립형 답 칸 (훈음 쓰기는 훈과 음 사이를 띄움) */
+  const slots = (
+    <div className="flex flex-wrap items-center justify-center gap-2 min-h-[4rem]">
+      {Array.from({ length: needLen }).map((_, i) => (
+        <React.Fragment key={i}>
+          {q.split !== undefined && i === q.split && <span className="w-3" />}
+          <button disabled={answered || built[i] === undefined}
+            {...tap(() => { if (!answered && built[i] !== undefined) setBuilt(built.filter((_, k) => k !== i)); })}
+            className={`w-14 h-16 rounded-2xl border-b-4 text-3xl font-black font-display flex items-center justify-center ${
+              answered ? (lastOk ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-rose-500 bg-rose-50 text-rose-600')
+                : built[i] !== undefined ? 'border-brand-400 bg-brand-50 text-brand-800' : 'border-slate-200 bg-slate-50 text-slate-300'}`}>
+            {built[i] !== undefined ? q.tiles![built[i]] : '?'}
+          </button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full max-w-2xl landscape:max-w-6xl mx-auto w-full">
@@ -501,11 +526,23 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                 className="flex flex-col items-center justify-center gap-3 w-full text-center">
                 <div className="text-sm font-bold text-slate-500">{caption}</div>
 
-                {q.type === 'hun' && <div className="hanja text-[clamp(5rem,26vmin,11rem)] text-slate-900">{q.c}</div>}
+                {(q.type === 'hun' || q.type === 'eum') && <div className="hanja text-[clamp(5rem,26vmin,11rem)] text-slate-900">{q.c}</div>}
+
+                {q.type === 'write' && (
+                  <>
+                    <div className="hanja text-[clamp(4rem,20vmin,8rem)] text-slate-900 leading-none">{q.c}</div>
+                    {slots}
+                  </>
+                )}
+
+                {q.type === 'order' && (
+                  <StrokeChar c={q.c} hi={q.stroke ?? 0} className="w-[clamp(9rem,34vmin,15rem)] h-[clamp(9rem,34vmin,15rem)] text-[clamp(7rem,28vmin,12rem)]" />
+                )}
 
                 {q.type === 'pick' && (
-                  <div className="text-[clamp(2.25rem,9vmin,4rem)] font-black text-slate-900 font-display">
-                    {h.hun} <span className="text-brand-600">{h.eum}</span>
+                  <div>
+                    <div className="text-[clamp(2.5rem,10vmin,4.5rem)] font-black text-slate-900 font-display">{h.hun}</div>
+                    {h.std && <div className="text-xs font-bold text-slate-400">시험에서는 “{h.std}”</div>}
                   </div>
                 )}
 
@@ -527,19 +564,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                         </React.Fragment>
                       ))}
                     </p>
-                    {q.assemble && (
-                      <div className="flex items-center justify-center gap-2 min-h-[4rem]">
-                        {Array.from({ length: needLen }).map((_, i) => (
-                          <button key={i} disabled={answered || built[i] === undefined}
-                            {...tap(() => { if (!answered && built[i] !== undefined) setBuilt(built.filter((_, k) => k !== i)); })}
-                            className={`w-14 h-16 rounded-2xl border-b-4 text-3xl font-black font-display flex items-center justify-center ${
-                              answered ? (lastOk ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-rose-500 bg-rose-50 text-rose-600')
-                                : built[i] !== undefined ? 'border-brand-400 bg-brand-50 text-brand-800' : 'border-slate-200 bg-slate-50 text-slate-300'}`}>
-                            {built[i] !== undefined ? q.tiles![built[i]] : '?'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {q.assemble && slots}
                   </div>
                 )}
 
@@ -551,7 +576,15 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                     <div className="mt-1 text-lg text-slate-800">
                       {q.type === 'word' && q.word
                         ? <><span className="hanja text-2xl mr-2">{q.word.w}</span>{q.word.r}<span className="block text-sm font-bold text-slate-500 mt-0.5">{q.word.gloss}</span></>
-                        : <><span className="hanja text-2xl mr-2">{q.c}</span>{h.hun} {h.eum}{h.std && <span className="block text-xs font-bold text-slate-500 mt-0.5">시험에서는 “{h.std} {h.eum}”</span>}</>}
+                        : q.type === 'write'
+                          ? <><span className="hanja text-2xl mr-2">{q.c}</span>{examHunEum(q.c)}{h.std && <span className="block text-xs font-bold text-slate-500 mt-0.5">쉬운 말로는 “{h.hun} {h.eum}”</span>}{h.alt && <span className="block text-xs font-bold text-slate-500 mt-0.5">“{h.alt}”도 맞아요</span>}</>
+                          : <><span className="hanja text-2xl mr-2">{q.c}</span>{h.hun} {h.eum}{h.std && <span className="block text-xs font-bold text-slate-500 mt-0.5">시험에서는 “{h.std} {h.eum}”</span>}</>}
+                      {q.type === 'order' && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-sm text-slate-600">진한 획은 <span className="text-amber-600">{answerText(q)}</span>로 써요</div>
+                          <StrokeSteps c={q.c} mark={q.stroke ?? 0} />
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -590,7 +623,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
               </div>
             </>
           ) : (
-            <div className={`grid gap-2.5 ${q.options.length === 3 && !q.options[0].isHanja ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <div className={`grid gap-2.5 ${q.type === 'eum' && q.options.length === 3 ? 'grid-cols-3' : q.options.length === 3 && !q.options[0].isHanja && q.type !== 'eum' ? 'grid-cols-1' : 'grid-cols-2'}`}>
               {q.options.map(o => {
                 const isAns = o.key === q.answer;
                 const isPicked = o.key === picked;
@@ -603,7 +636,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                       : 'bg-white border-slate-200 text-slate-800 shadow-sm active:bg-brand-50 active:border-brand-300';
                 return (
                   <button key={o.key} disabled={answered || gone} {...tap(() => choose(o.key))}
-                    className={`relative rounded-3xl border-2 transition-colors select-none flex items-center justify-center ${o.isHanja ? 'hanja text-[clamp(3rem,13vmin,5rem)] py-4 landscape:py-6' : 'text-[clamp(1.15rem,4.6vmin,1.75rem)] font-black py-5 landscape:py-7 px-2'} ${tone}`}>
+                    className={`relative rounded-3xl border-2 transition-colors select-none flex items-center justify-center ${o.isHanja ? 'hanja text-[clamp(3rem,13vmin,5rem)] py-4 landscape:py-6' : q.type === 'eum' ? 'text-[clamp(2rem,8vmin,3rem)] font-black py-4 landscape:py-6 px-2' : 'text-[clamp(1.15rem,4.6vmin,1.75rem)] font-black py-5 landscape:py-7 px-2'} ${tone}`}>
                     {o.label}
                     {answered && isAns && <CheckCircle2 size={22} className="absolute top-2 right-2 text-emerald-500" />}
                     {answered && isPicked && !isAns && <XCircle size={22} className="absolute top-2 right-2 text-rose-500" />}
@@ -620,7 +653,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                 {kind !== 'check' && !inRetry && (
                   <button onClick={pressHint} disabled={!!hint} aria-label="힌트"
                     className="btn-secondary w-full h-full px-2 py-2 flex flex-col items-center justify-center gap-1 disabled:opacity-40">
-                    <span className="flex items-center gap-1 text-sm"><Lightbulb size={18} className="text-amber-500" />힌트</span>
+                    <span className="flex items-center gap-1 text-sm whitespace-nowrap"><Lightbulb size={18} className="text-amber-500 shrink-0" />힌트</span>
                     {freeLeft > 0
                       ? <span className="flex items-center gap-0.5">{Array.from({ length: round.free }).map((_, i) => (
                         <span key={i} className={`w-2 h-2 rounded-full ${i < freeLeft ? 'bg-amber-400' : 'bg-slate-200'}`} />

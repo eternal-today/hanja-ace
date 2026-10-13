@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Award, Check, CheckCircle2, ChevronLeft, ChevronRight, Database, Gift, History, Home, Lightbulb, Lock,
-  Plus, Settings, Smartphone, Sparkles, Star, Trash2, XCircle,
+  ListOrdered, Plus, Settings, Smartphone, Sparkles, Star, Trash2, XCircle,
 } from 'lucide-react';
 import { Config, RoundRecord } from '../types';
 import { GROUPS, GROUP_BY_ID, HANJA, STAGES, STAGES_WITH_WORDS, charsOfStage, hunEum } from '../data';
@@ -12,8 +12,10 @@ import { hubGeminiKey, maskKey } from '../ace/settings';
 import { freeHints, poolChars } from '../engine/quiz';
 import { INTERVALS, dayIndex, toneOf } from '../engine/srs';
 import { toast } from '../components/ui';
+import { StrokeSteps } from '../components/StrokeChar';
+import { ORDER_CHARS } from '../data/strokeChars';
 
-const KIND_LABEL: Record<string, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', check: '실력 확인' };
+const KIND_LABEL: Record<string, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
 
 const Card = ({ children, dim = false }: { children: React.ReactNode; dim?: boolean }) => (
   <section className={`bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5 ${dim ? 'opacity-70 hover:opacity-100 transition-opacity' : ''}`}>{children}</section>
@@ -30,6 +32,44 @@ const Stepper = ({ value, min, max, onChange, unit }: { value: number; min: numb
   </div>
 );
 
+/**
+ * 필순 문제에 나오는 글자. 필순 데이터가 중국 필순 기준이라, 부모가 교재 필순과 비교해 다른 글자를 뺄 수 있게 함.
+ * (입력 칸이 없어 화면 안에 두어도 되지만, 다른 카드들과 맞춰 바깥에 둠)
+ */
+function OrderCard({ draft, setDraft }: { draft: Config; setDraft: (c: Config) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const off = new Set(draft.orderOff || []);
+  const chars = [...ORDER_CHARS];
+  const toggle = (c: string) => setDraft({ ...draft, orderOff: off.has(c) ? [...off].filter(x => x !== c) : [...off, c] });
+  return (
+    <Card>
+      <Title icon={<ListOrdered size={18} className="text-trust-600" />}>필순 문제에 나오는 글자 ({chars.length - chars.filter(c => off.has(c)).length}자)</Title>
+      <p className="text-[11px] text-slate-400 leading-relaxed">
+        필순 그림은 공개 데이터(중국 필순 기준)를 씁니다. 한국 필순과 다를 수 있는 글자(艹가 든 글자, 右·左·有, 王·主, 出, 長, 母, 車, 世, 年 등)와
+        한국 자형과 획수가 다른 글자(祖, 道 등)는 미리 뺐습니다. 글자를 누르면 필순이 나옵니다. 교재와 다르면 「빼기」를 눌러 주세요.
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {chars.map(c => (
+          <button key={c} onClick={() => setOpen(open === c ? null : c)}
+            className={`hanja w-10 h-10 rounded-lg border-2 text-xl ${open === c ? 'border-trust-500 bg-trust-50' : off.has(c) ? 'border-slate-100 text-slate-300 line-through' : 'border-slate-200 text-slate-800'}`}>{c}</button>
+        ))}
+      </div>
+      {open && (
+        <div className="bg-slate-50 rounded-xl p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-bold text-slate-700"><span className="hanja text-xl mr-1">{open}</span>{hunEum(open)} · {HANJA[open].strokes}획</span>
+            <button onClick={() => toggle(open)}
+              className={`text-xs font-bold px-3 py-1.5 rounded-lg ${off.has(open) ? 'bg-trust-600 text-white' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
+              {off.has(open) ? '다시 넣기' : '빼기'}
+            </button>
+          </div>
+          <StrokeSteps c={open} mark={-1} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function Parent({ onHome }: { onHome: () => void }) {
   const store = useStore();
   const [tab, setTab] = useState<'settings' | 'chance' | 'records'>('settings');
@@ -43,7 +83,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
   const dirty = JSON.stringify({ ...draft, chances: null }) !== JSON.stringify({ ...store.config, chances: null });
   const save = () => {
     if (!draft.groupIds.length) { toast('묶음을 하나 이상 골라 주세요'); return; }
-    if (!draft.modes.hun && !draft.modes.word && !draft.modes.listen) { toast('문제 유형을 하나 이상 켜 주세요'); return; }
+    if (!Object.values(draft.modes).some(Boolean)) { toast('문제 유형을 하나 이상 켜 주세요'); return; }
     actions.saveConfig({ ...draft, chances: getState().config.chances });
     toast('설정이 저장되었습니다!');
   };
@@ -221,7 +261,9 @@ export default function Parent({ onHome }: { onHome: () => void }) {
               <div className="space-y-3">
                 <Label>오늘의 한 판에 섞을 문제 유형</Label>
                 <div className="grid gap-2">
-                  {([['hun', '훈음 맞히기', '한자를 보고 훈음 고르기, 훈음을 보고 한자 고르기'], ['word', '낱말 읽기', '문장 속 한자어의 독음 맞히기 (시험에서 비중이 가장 큼)'], ['listen', '듣고 고르기', '훈음을 듣고 한자 고르기']] as const).map(([k, label, desc]) => (
+                  {([['hun', '훈음 맞히기', '한자 → 훈음, 훈(뜻)만 보고 한자, 한자 → 음 고르기. 훈이 같은 글자(마을 村·里 등)는 한 문제의 보기에 함께 나오지 않습니다'], ['word', '낱말 읽기', '문장 속 한자어의 독음 맞히기 (시험에서 비중이 가장 큼)'], ['listen', '듣고 고르기', '훈음을 듣고 한자 고르기'],
+                    ['write', '훈음 쓰기', '음절 조각으로 표준 훈음 만들기 (녘/녁, 흰/힌 같은 철자 함정 포함). 시험의 훈음 쓰기 대비'],
+                    ['order', '필순', '진하게 칠한 획이 몇 번째 획인지 고르기. 아래 목록의 글자만 나옵니다']] as const).map(([k, label, desc]) => (
                     <button key={k} onClick={() => setDraft({ ...draft, modes: { ...draft.modes, [k]: !draft.modes[k] } })}
                       className={`text-left px-4 py-3 rounded-xl border-2 flex items-center justify-between gap-3 ${draft.modes[k] ? 'border-trust-200 bg-trust-50' : 'border-slate-100 bg-white'}`}>
                       <span>
@@ -236,6 +278,8 @@ export default function Parent({ onHome }: { onHome: () => void }) {
                 </div>
               </div>
             </Card>
+
+            <OrderCard draft={draft} setDraft={setDraft} />
 
             <Card>
               <Title icon={<Lightbulb size={18} className="text-amber-500" />}>힌트</Title>

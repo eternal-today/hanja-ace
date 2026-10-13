@@ -36,8 +36,12 @@ export interface Card {
   last: number;   // 마지막으로 푼 시각(ms)
 }
 
-export type QType = 'hun' | 'pick' | 'listen' | 'word';
-export type RoundKind = 'daily' | 'hun' | 'word' | 'listen' | 'check';
+/**
+ * hun 한자 → 훈음 고르기 / pick 훈만 보고 한자 고르기 / eum 한자 → 음만 고르기
+ * write 훈음 조각 조립(시험의 훈음 쓰기) / order 진한 획이 몇 번째 획인지 / listen 듣고 한자 고르기 / word 낱말 읽기
+ */
+export type QType = 'hun' | 'pick' | 'eum' | 'write' | 'order' | 'listen' | 'word';
+export type RoundKind = 'daily' | 'hun' | 'word' | 'listen' | 'write' | 'order' | 'check';
 
 export interface Option { key: string; label: string; isHanja: boolean }
 
@@ -49,6 +53,9 @@ export interface Question {
   word?: Word;            // 낱말 문제일 때
   assemble?: boolean;     // 음절 조립형
   tiles?: string[];       // 조립형 음절 조각
+  split?: number;         // 훈음 조립: 앞에서 몇 칸이 훈인지 (그 뒤에 한 칸 띄움)
+  accept?: string[];      // 정답으로 함께 인정하는 답 (다른 훈음)
+  stroke?: number;        // 필순: 진하게 보여 줄 획 (0부터)
   isNew?: boolean;        // 이번 판에 처음 만나는 글자
 }
 
@@ -82,7 +89,8 @@ export interface Coupon {
 
 export interface Config {
   groupIds: string[];                 // 문제에 나오는 묶음
-  modes: { hun: boolean; word: boolean; listen: boolean };
+  modes: { hun: boolean; word: boolean; listen: boolean; write: boolean; order: boolean };
+  orderOff: string[];                 // 필순 문제에서 뺀 글자 (부모가 교재와 비교해 고름)
   count: number;                      // 한 판의 문제 수
   difficulty: number;                 // 1 쉬움, 2 보통, 3 어려움
   newPerRound: number;                // 한 판에 새로 내놓는 글자 수

@@ -48,3 +48,7 @@ git push -u origin main
 ## 데이터 출처
 
 글자 데이터는 한국어문회가 공개한 급수별 배정한자 자료의 변환본(github.com/rycont/hanja-grade-dataset)에서 가져왔고, 저작권은 한국어문회에 있습니다. 가족용으로만 쓰고, 공개 배포할 때는 확인이 필요합니다. 낱말의 뜻풀이와 예문은 새로 쓴 초안입니다.
+
+## 필순 데이터
+- `src/data/strokeData.ts`의 획 모양은 [Hanzi Writer 데이터](https://github.com/chanind/hanzi-writer-data)(hanzi-writer-data 2.0.1)에서 가져왔습니다. 이 데이터는 Arphic Public License를 따릅니다.
+- 중국 필순 기준 데이터라서, 한국 필순과 다를 수 있는 글자와 획수가 다른 글자는 뺐습니다. 부모 화면에서 글자마다 더 뺄 수 있습니다.

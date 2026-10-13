@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { BookOpen, ChevronRight, Ear, Languages, PlayCircle, Search, Sparkles, Star, Type } from 'lucide-react';
+import { BookOpen, ChevronRight, Ear, Languages, ListOrdered, PenLine, PlayCircle, Search, Sparkles, Star, Type } from 'lucide-react';
 import { RoundKind } from '../types';
 import { STAGES, charsOfStage } from '../data';
 import { BADGES, useStore } from '../engine/store';
@@ -11,7 +11,7 @@ import { canSpeak, poolStatus } from '../engine/quiz';
 import { toneOf } from '../engine/srs';
 import { loadRound } from '../engine/resume';
 
-const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', check: '실력 확인' };
+const KIND_NAME: Record<RoundKind, string> = { daily: '오늘의 한 판', hun: '훈음 맞히기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순', check: '실력 확인' };
 
 interface Props {
   onParent: () => void;
@@ -107,6 +107,8 @@ export default function ChildHome({ onParent, onStart, onResume, onDogam, onRewa
                 { kind: 'hun', label: '훈음 맞히기', icon: <Type size={26} />, on: true },
                 { kind: 'word', label: '낱말 읽기', icon: <Languages size={26} />, on: true },
                 { kind: 'listen', label: '듣고 고르기', icon: <Ear size={26} />, on: canSpeak() },
+                { kind: 'write', label: '훈음 쓰기', icon: <PenLine size={26} />, on: true },
+                { kind: 'order', label: '필순', icon: <ListOrdered size={26} />, on: true },
               ] as { kind: RoundKind; label: string; icon: React.ReactNode; on: boolean }[]).map(m => (
                 <motion.button key={m.kind} whileTap={{ scale: 0.95 }} disabled={!m.on} onClick={() => onStart(m.kind)}
                   className="bg-white border-2 border-slate-200 rounded-3xl p-4 flex flex-col items-center gap-2 text-brand-600 disabled:opacity-40">

@@ -7,6 +7,7 @@
 import { Card, Config, Option, QType, Question, RoundKind, Word } from '../types';
 import { GROUP_BY_ID, HANJA, WORDS, WORDS_BY_CHAR, charsOfStage, hunEum } from '../data';
 import { LOOKALIKE } from '../data/lookalike';
+import { ORDER_CHARS, ordinal } from '../data/strokeChars';
 import { dayIndex } from './srs';
 
 export const ri = (a: number, b: number) => Math.floor(Math.random() * (b - a + 1)) + a;
@@ -59,6 +60,7 @@ export function planRound(config: Config, cards: Record<string, Card>, kind: Rou
   const upcoming = pool.filter(c => !cards[c]).slice(0, config.newPerRound);
   const allowed = new Set([...Object.keys(cards), ...upcoming]);
   if (kind === 'word') pool = pool.filter(c => wordsFor(c, allowed).length > 0);
+  if (kind === 'order') pool = pool.filter(c => canOrder(c, config));
   if (!pool.length) return { targets: [], newChars: [], dueCount: 0 };
 
   const seen = pool.filter(c => cards[c]);
@@ -113,20 +115,46 @@ function similarChars(c: string, from: string[]): string[] {
   return [...new Set([...shuffle(look), ...shuffle(sameEum), ...shuffle(sameGroup), ...shuffle(sameRad)])].filter(x => x !== c);
 }
 
+/** 훈이 겹치는 글자인지 (마을 村·里, 날 日·生·出, 집 家·室, 말씀 語·話 …) */
+const hunsOf = (c: string) => {
+  const h = HANJA[c];
+  return new Set([h.hun, h.std, ...h.hunFull.split('·')].filter(Boolean));
+};
+export function sameHun(a: string, b: string): boolean {
+  const A = hunsOf(a);
+  for (const x of hunsOf(b)) if (A.has(x)) return true;
+  return false;
+}
+/** 대표 음과 다른 음 (金 금·김, 車 거·차) */
+const eumsOf = (c: string) => {
+  const h = HANJA[c];
+  return h.alt ? [h.eum, h.alt.split(' ').pop()!] : [h.eum];
+};
+
+/** 보기의 모양: 훈음(hun) · 한자(pick, listen) · 음(eum) */
+type OptKind = 'hun' | 'pick' | 'eum';
+
 /**
  * 틀린 보기 글자 고르기.
  *  쉬움: 아무 글자 / 보통: 비슷한 글자 2개 + 아무 글자 / 어려움: 전부 비슷한 글자
+ *  pick(훈만 보고 고르기): 훈이 같은 글자는 넣지 않음 — 넣으면 답이 둘이 됨
+ *  eum(음만 고르기): 음이 같은 글자는 넣지 않음
  */
-function distractorChars(c: string, ctx: MakeCtx, n: number): string[] {
+function distractorChars(c: string, ctx: MakeCtx, n: number, kind: OptKind = 'hun'): string[] {
   const diff = ctx.config.difficulty;
-  const label = hunEum(c);
+  const labelOf = (x: string) => (kind === 'eum' ? HANJA[x].eum : hunEum(x));
   const out: string[] = [];
-  const labels = new Set<string>([label]);
+  const labels = new Set<string>(kind === 'eum' ? eumsOf(c) : [labelOf(c)]);
+  const ok = (x: string) => {
+    if (x === c || out.includes(x) || labels.has(labelOf(x))) return false;
+    if (kind === 'pick' && [c, ...out].some(y => sameHun(x, y))) return false;
+    return true;
+  };
   const take = (list: string[], limit = n) => {
     for (const x of list) {
       if (out.length >= limit) return;
-      if (x === c || out.includes(x) || labels.has(hunEum(x))) continue;
-      out.push(x); labels.add(hunEum(x));
+      if (!ok(x)) continue;
+      out.push(x); labels.add(labelOf(x));
     }
   };
   if (diff >= 2) {
@@ -137,6 +165,44 @@ function distractorChars(c: string, ctx: MakeCtx, n: number): string[] {
   take(shuffle(ctx.candidates));
   // 범위가 아주 좁을 때는 같은 단계의 다른 글자에서 빌려 옴
   if (out.length < n) take(shuffle(charsOfStage(HANJA[c].stage)));
+  return out;
+}
+
+// ── 훈음 쓰기 조각 ──
+const CHO_N = 19, JUNG_N = 21, JONG_N = 28;
+const split3 = (ch: string) => {
+  const k = ch.charCodeAt(0) - 0xac00;
+  if (k < 0 || k > 11171) return null;
+  return [Math.floor(k / (JUNG_N * JONG_N)), Math.floor((k % (JUNG_N * JONG_N)) / JONG_N), k % JONG_N];
+};
+const join3 = (a: number, b: number, c: number) => String.fromCharCode(0xac00 + (a * JUNG_N + b) * JONG_N + c);
+/** 헷갈리기 쉬운 모음: ㅢ→ㅣ(흰/힌), ㅐ↔ㅔ, ㅒ↔ㅖ, ㅚ→ㅙ·ㅞ, ㅖ→ㅔ */
+const JUNG_TRAP: Record<number, number[]> = { 19: [20], 1: [5], 5: [1], 3: [7], 7: [5, 3], 11: [10, 15], 10: [11], 15: [11] };
+/** 드문 받침 → 흔한 받침 (녘/녁, 밖/박, 밭/밧, 앞/압, 꽃/꼿 …), 겹받침 → 홑받침 */
+const JONG_TRAP: Record<number, number[]> = {
+  24: [1], 2: [1], 25: [19], 23: [19], 22: [19], 27: [19], 20: [19], 26: [17],
+  9: [8, 1], 10: [8, 16], 11: [8], 13: [8], 15: [8], 5: [4], 6: [4], 3: [1], 18: [17],
+};
+/** 두음: 본음이 ㄹ·ㄴ인 음 (륙→육, 녀→여, 리→이, 로→노) */
+function dueumTrap(ch: string): string | null {
+  const j = split3(ch);
+  if (!j) return null;
+  const [a, b, c] = j;
+  const yi = [2, 3, 6, 7, 12, 17, 20].includes(b);   // ㅑㅒㅕㅖㅛㅠㅣ
+  if (a === 5) return join3(yi ? 11 : 2, b, c);
+  if (a === 2 && yi) return join3(11, b, c);
+  return null;
+}
+function spellingTraps(syls: string[], eumAt: number): string[] {
+  const out: string[] = [];
+  syls.forEach((ch, i) => {
+    const j = split3(ch);
+    if (!j) return;
+    const [a, b, c] = j;
+    for (const v of JUNG_TRAP[b] || []) out.push(join3(a, v, c));
+    for (const v of JONG_TRAP[c] || []) out.push(join3(a, b, v));
+    if (i === eumAt) { const d = dueumTrap(ch); if (d) out.push(d); }
+  });
   return out;
 }
 
@@ -187,19 +253,29 @@ export interface MakeCtx {
 
 const freshWords = (c: string, ctx: MakeCtx) => wordsFor(c, ctx.allowed).filter(w => !ctx.usedWords.has(w.w));
 
+/** 필순 문제를 낼 수 있는 글자인지 (한국 필순과 같다고 본 글자 가운데 부모가 빼지 않은 것, 3획 이상) */
+export function canOrder(c: string, config: Config): boolean {
+  return ORDER_CHARS.has(c) && !(config.orderOff || []).includes(c) && HANJA[c].strokes >= 3;
+}
+
 /** 이 글자로 낼 문제 유형 고르기 */
 export function chooseType(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: boolean): QType {
   const hasWord = freshWords(c, ctx).length > 0;
+  const order = canOrder(c, ctx.config);
   if (kind === 'check') return 'hun';
-  if (kind === 'hun') return Math.random() < 0.5 ? 'hun' : 'pick';
+  if (kind === 'hun') return pickOne<QType>(['hun', 'hun', 'pick', 'pick', 'eum']);
   if (kind === 'listen') return canSpeak() ? 'listen' : 'pick';
   if (kind === 'word') return hasWord ? 'word' : 'hun';
+  if (kind === 'write') return firstMeet ? 'hun' : Math.random() < 0.75 ? 'write' : 'eum';
+  if (kind === 'order') return order ? 'order' : 'hun';
   if (firstMeet) return 'hun';
   const m = ctx.config.modes;
   const bag: QType[] = [];
-  if (m.hun) bag.push('hun', 'hun', 'pick', 'pick');
+  if (m.hun) bag.push('hun', 'hun', 'pick', 'pick', 'eum');
   if (m.word && hasWord) bag.push('word', 'word', 'word', 'word');
   if (m.listen && canSpeak()) bag.push('listen', 'listen');
+  if (m.write) bag.push('write', 'write');
+  if (m.order && order) bag.push('order');
   return bag.length ? pickOne(bag) : 'hun';
 }
 
@@ -210,17 +286,22 @@ export function chooseType(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: 
 export function nextQuestion(c: string, kind: RoundKind, ctx: MakeCtx, firstMeet: boolean): Question | null {
   const m = ctx.config.modes;
   const speak = canSpeak();
+  const order = canOrder(c, ctx.config);
   const pool: QType[] = kind === 'check' ? ['hun']
-    : kind === 'hun' ? ['hun', 'pick']
+    : kind === 'hun' ? ['hun', 'pick', 'eum']
       : kind === 'listen' ? (speak ? ['listen', 'pick', 'hun'] : ['pick', 'hun'])
         : kind === 'word' ? ['word', 'hun', 'pick']
-          : [...(m.word ? ['word'] : []), ...(m.hun ? ['hun', 'pick'] : []), ...(m.listen && speak ? ['listen'] : []), 'hun', 'pick'] as QType[];
+          : kind === 'write' ? ['write', 'eum', 'hun']
+            : kind === 'order' ? ['order', 'eum', 'hun']
+              : [...(m.word ? ['word'] : []), ...(m.hun ? ['hun', 'pick', 'eum'] : []), ...(m.listen && speak ? ['listen'] : []),
+                ...(m.write ? ['write'] : []), ...(m.order && order ? ['order'] : []), 'hun', 'pick'] as QType[];
   const first = chooseType(c, kind, ctx, firstMeet);
-  const order = [first, ...shuffle([...new Set(pool)].filter(t => t !== first))];
-  for (const t of order) {
+  const order0 = [first, ...shuffle([...new Set(pool)].filter(t => t !== first))];
+  for (const t of order0) {
     if (t === 'word') {
       if (!freshWords(c, ctx).length) continue;
-    } else if (ctx.used.has(`${t}:${c}`)) continue;
+    } else if (t === 'order' && !order) continue;
+    else if (ctx.used.has(`${t}:${c}`)) continue;
     const q = makeQuestion(c, t, ctx, firstMeet);
     ctx.used.add(`${q.type}:${q.c}`);
     return q;
@@ -252,12 +333,47 @@ export function makeQuestion(c: string, type: QType, ctx: MakeCtx, isNew = false
     type = 'hun';
   }
 
-  const wrong = distractorChars(c, ctx, nWrong);
+  if (type === 'order') {
+    // 진하게 칠할 획: 4획 이상이면 첫 획은 빼고 고름. 보기는 정답 둘레의 이어진 순서 3~4개
+    const n = HANJA[c].strokes;
+    const ans = ri(n >= 4 ? 1 : 0, n - 1);
+    const k = Math.min(n, nWrong + 1);
+    const start = Math.max(0, Math.min(n - k, ans - ri(0, k - 1)));
+    const options: Option[] = Array.from({ length: k }, (_, i) => ({ key: String(start + i + 1), label: ordinal(start + i + 1), isHanja: false }));
+    return { type, c, options, answer: String(ans + 1), stroke: ans, isNew };
+  }
+
+  if (type === 'write') {
+    // 시험의 훈음 쓰기: 표준 훈 + 음을 조각으로 만듦. 틀린 조각은 철자 함정과 헷갈리는 글자의 훈음에서
+    const h = HANJA[c];
+    const hun = h.std || h.hun;
+    const need = [...Array.from(hun), h.eum];
+    const has = new Set(need);
+    const extraN = Math.max(2, Math.min(diff + 1, 8 - need.length));
+    const extra: string[] = [];
+    const add = (x: string) => { if (x && !has.has(x) && !extra.includes(x) && extra.length < extraN) extra.push(x); };
+    const traps = shuffle(spellingTraps(need, need.length - 1));
+    const look = similarChars(c, ctx.wide).slice(0, 4).flatMap(x => [...Array.from(HANJA[x].std || HANJA[x].hun), HANJA[x].eum]);
+    // 쉬움은 함정 1개, 보통·어려움은 함정을 먼저 채움
+    traps.slice(0, diff === 1 ? 1 : extraN).forEach(add);
+    shuffle(look).forEach(add);
+    shuffle(ctx.candidates).flatMap(x => [HANJA[x].eum, ...Array.from(HANJA[x].hun)]).forEach(add);
+    const accept = h.alt ? [h.alt.replace(' ', '')] : undefined;
+    return { type, c, options: [], answer: hun + h.eum, assemble: true, tiles: shuffle([...need, ...extra]), split: Array.from(hun).length, accept, isNew };
+  }
+
+  if (type === 'eum') {
+    const wrong = distractorChars(c, ctx, nWrong, 'eum');
+    const options: Option[] = shuffle([c, ...wrong]).map(x => ({ key: HANJA[x].eum, label: HANJA[x].eum, isHanja: false }));
+    return { type, c, options, answer: HANJA[c].eum, isNew };
+  }
+
+  const wrong = distractorChars(c, ctx, nWrong, type === 'hun' ? 'hun' : 'pick');
   if (type === 'hun') {
     const options: Option[] = shuffle([c, ...wrong]).map(x => ({ key: x, label: hunEum(x), isHanja: false }));
     return { type, c, options, answer: c, isNew };
   }
-  // pick / listen: 훈음을 보거나 듣고 한자를 고름
+  // pick: 훈만 보고 / listen: 훈음을 듣고 한자를 고름
   const options: Option[] = shuffle([c, ...wrong]).map(x => ({ key: x, label: x, isHanja: true }));
   return { type, c, options, answer: c, isNew };
 }
@@ -292,17 +408,40 @@ export function hintLines(q: Question, allowed: Set<string>): string[] {
     return lines;
   }
   const themed = group && (group.stage === '8급' || group.stage === '7급');
+  const where = themed ? `‘${group.name}’ 묶음에서 배운 글자야` : `${h.level} 글자야`;
+  if (q.type === 'eum') return [`뜻은 ‘${h.hun}’이야`, where];
+  if (q.type === 'write') return [`첫소리는 「${chosung(h.std || h.hun)} ${chosung(h.eum)}」야`, where];
+  if (q.type === 'order') return [`모두 ${h.strokes}획이야`, '위에서 아래로, 왼쪽에서 오른쪽으로 써 나가요'];
   return [`모두 ${h.strokes}획으로 쓰는 글자야`, themed ? `‘${group.name}’ 묶음에서 배운 글자야` : `${h.level} 글자야`];
 }
+
+/** 시험 답안 기준 훈음 ("계집 녀") */
+export const examHunEum = (c: string) => `${HANJA[c].std || HANJA[c].hun} ${HANJA[c].eum}`;
 
 /** 문제를 글로 적은 것 (기록용) */
 export function questionText(q: Question): string {
   if (q.type === 'word' && q.word) return `${q.word.w} 읽기`;
   if (q.type === 'hun') return `${q.c} 훈음`;
+  if (q.type === 'eum') return `${q.c} 음`;
+  if (q.type === 'write') return `${q.c} 훈음 쓰기`;
+  if (q.type === 'order') return `${q.c} 필순`;
+  if (q.type === 'pick') return `${HANJA[q.c].hun} → 한자`;
   return `${hunEum(q.c)} → 한자`;
 }
 export function answerText(q: Question): string {
   if (q.type === 'word' && q.word) return q.word.r;
   if (q.type === 'hun') return hunEum(q.c);
+  if (q.type === 'eum') return HANJA[q.c].eum;
+  if (q.type === 'write') return examHunEum(q.c);
+  if (q.type === 'order') return ordinal(Number(q.answer));
   return q.c;
 }
+/** 아이가 낸 답을 기록에 적을 모양으로 */
+export function shownAnswer(q: Question, value: string): string {
+  if (q.type === 'hun') return HANJA[value] ? hunEum(value) : value;
+  if (q.type === 'order') return ordinal(Number(value));
+  if (q.type === 'write' && q.split) { const a = Array.from(value); return `${a.slice(0, q.split).join('')} ${a.slice(q.split).join('')}`; }
+  return value;
+}
+/** 정답인지 (다른 훈음도 인정) */
+export const isRight = (q: Question, value: string) => value === q.answer || !!q.accept?.includes(value);
