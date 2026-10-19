@@ -358,8 +358,21 @@ export function cancelCoupon(id: number): boolean {
 // ─────────────────────────────────────────────
 // 수학 에이스의 예전 소원 쿠폰 (별 50·150·250…에서 받은 것)
 // ─────────────────────────────────────────────
+/**
+ * 소원 쿠폰 발급을 멈춘 수학 에이스 배포 시각. 이보다 먼저 푼 기록으로 도달한 50·150·250… 쿠폰만 인정
+ * (수학 에이스 sync.ts의 wishFreezeMax와 같은 기준 — 에이스 홈에서도 바로 맞게 보이도록 여기서 한 번 더 거름)
+ */
+const WISH_STOP_AT = Date.parse('2026-10-12T20:46:00+09:00');
+function wishCap(): number {
+  let before = 0;
+  for (const [ts, r] of mathRows()) if (ts < WISH_STOP_AT) before += Math.floor(r.c / 5) - r.h;
+  let max = 0;
+  for (let m = 50; m <= before; m += 50) if (m % 100 !== 0) max = m;
+  return max;
+}
 export function mathWishCoupons(): number[] {
-  return readJSON<number[]>(MATH.wish, []).slice().sort((a, b) => a - b);
+  const cap = wishCap();
+  return readJSON<number[]>(MATH.wish, []).filter(v => v <= cap).slice().sort((a, b) => a - b);
 }
 /** 소원 쿠폰 사용 — 수학 에이스와 같은 방식(사용 목록에 추가)이라 수학 동기화로 다른 기기에도 반영됨 */
 export function useMathWish(value: number) {
@@ -453,10 +466,26 @@ export function childName(): string {
   return String(m?.childName || h?.childName || '').trim();
 }
 /** 허브 부모 PIN: 허브에서 정한 값 → 수학 PIN → 한자 PIN → 1234 */
+/**
+ * 에이스 홈 PIN — 별·쿠폰을 다루므로 과목 앱 PIN과 따로 둠 (기기 안에만 저장).
+ * 아직 없으면 '' → 처음 열 때 과목 앱 PIN으로 부모님인지 확인한 뒤 새로 만듦.
+ */
 export function hubPin(): string {
-  return localStorage.getItem(K.pin) || localStorage.getItem(MATH.pin) || localStorage.getItem(HANJA.pin) || '1234';
+  try { return localStorage.getItem(K.pin) || ''; } catch { return ''; }
 }
 export function setHubPin(pin: string) { localStorage.setItem(K.pin, pin); }
+/** 과목 앱 PIN들 (수학, 한자. 바꾸지 않았으면 1234) */
+export function subjectPins(): string[] {
+  const get = (k: string) => { try { return localStorage.getItem(k) || '1234'; } catch { return '1234'; } };
+  return [...new Set([get(MATH.pin), get(HANJA.pin)])];
+}
+/** 새 에이스 홈 PIN으로 쓸 수 있는지. 안 되면 이유 */
+export function hubPinProblem(pin: string): string | null {
+  if (!/^\d{4}$/.test(pin)) return 'PIN은 숫자 4자리예요';
+  if (pin === '1234') return '처음 PIN(1234)은 쓸 수 없어요';
+  if (subjectPins().includes(pin)) return '수학·한자 에이스 PIN과 다른 번호로 정해 주세요';
+  return null;
+}
 
 // ─────────────────────────────────────────────
 // 동기화용 변환 (aceSync.ts에서 사용)

@@ -6,7 +6,8 @@ import {
 import { Config, RoundRecord } from '../types';
 import { GROUPS, GROUP_BY_ID, HANJA, STAGES, STAGES_WITH_WORDS, charsOfStage, hunEum } from '../data';
 import { MAX_COUNT, MIN_COUNT, actions, earnedStars, getState, useStore } from '../engine/store';
-import { HINT_COST, couponState, coupons as aceCoupons, mathWishCoupons, useWallet } from '../ace/wallet';
+import { HINT_COST, couponState, coupons as aceCoupons, hubPin, mathWishCoupons, useWallet } from '../ace/wallet';
+import { AceSaveBar, confirmLeave } from '../ace/SaveBar';
 import { LINKS, goHome } from '../ace/links';
 import { hubGeminiKey, maskKey } from '../ace/settings';
 import { freeHints, poolChars } from '../engine/quiz';
@@ -143,7 +144,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
     <div className="min-h-[100dvh] bg-slate-50 pb-24">
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button onClick={onHome} aria-label="아이 홈" className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Home size={20} className="text-slate-600" /></button>
+          <button onClick={() => { if (confirmLeave()) onHome(); }} aria-label="아이 홈" className="p-2 hover:bg-slate-100 rounded-full transition-colors"><Home size={20} className="text-slate-600" /></button>
           <h2 className="font-bold text-slate-900">부모님 설정</h2>
         </div>
         <div className="bg-trust-100 text-trust-700 text-[10px] font-black px-2 py-1 rounded-md tracking-wider">ADMIN</div>
@@ -301,12 +302,6 @@ export default function Parent({ onHome }: { onHome: () => void }) {
               <p className="text-[11px] text-slate-400">인사와 칭찬에서 아이 이름을 불러 줘요. (선택)</p>
             </Card>
 
-            <div>
-              <button className={`btn-primary w-full py-4 text-lg bg-trust-600 hover:bg-trust-700 shadow-trust-100 ${dirty ? '' : 'opacity-60'}`} onClick={save}>
-                {dirty ? '바뀐 설정 저장하기' : '모든 설정 저장하기'}
-              </button>
-            </div>
-
             <div className="pt-10 border-t-2 border-dashed border-slate-200 space-y-6">
               <div className="flex items-center justify-center gap-2">
                 <div className="h-px bg-slate-200 flex-1" />
@@ -339,6 +334,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
                     value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))} />
                   <button className="btn-secondary px-6" onClick={() => {
                     if (newPin.length !== 4) { toast('PIN 번호는 4자리여야 합니다.'); return; }
+                    if (newPin === hubPin()) { toast('에이스 홈 PIN과 다른 번호로 정해 주세요.'); return; }
                     actions.setPin(newPin); setNewPin(''); toast('PIN 번호가 변경되었습니다!');
                   }}>변경</button>
                 </div>
@@ -517,6 +513,8 @@ export default function Parent({ onHome }: { onHome: () => void }) {
             )}
           </div>
         )}
+        {/* 바뀐 설정이 있으면 아래에 저장 막대 (모든 에이스 같은 모양) */}
+        <AceSaveBar dirty={dirty} onSave={save} onRevert={() => setDraft(store.config)} />
       </main>
     </div>
   );

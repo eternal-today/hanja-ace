@@ -5,6 +5,7 @@ import { BADGES, Milestone, useStore } from './engine/store';
 import { initCelebration, migrateHanjaLegacy } from './ace/wallet';
 import { startAceSync } from './ace/aceSync';
 import { AceRewardsSheet } from './ace/Rewards';
+import { confirmLeave } from './ace/SaveBar';
 import { Overlays, askPin, fireConfetti } from './components/ui';
 import ChildHome from './screens/ChildHome';
 import Play from './screens/Play';
@@ -47,6 +48,9 @@ export default function App() {
         return;
       }
       if (cur.screen === 'child' && cur.view === 'home') return;   // 아이 홈: 평소처럼 나감
+      if (cur.screen === 'parent' && !confirmLeave()) {       // 저장하지 않은 설정이 있어 머물기로 함
+        history.pushState({ hanja: 1 }, ''); guard.current = true; return;
+      }
       setScreen('child'); setView('home');
     };
     window.addEventListener('popstate', onPop);
