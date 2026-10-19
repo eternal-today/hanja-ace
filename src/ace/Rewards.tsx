@@ -1,6 +1,6 @@
 /**
  * 과목 앱 아이 홈의 보상 부분 — 모든 에이스가 같은 모양으로 씀
- * ※ src/ace 폴더는 허브·수학·한자 세 저장소에 똑같이 들어 있음. 고치면 세 곳에 같이 복사.
+ * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
  *
  *  <AceRewardCards>  아이 홈 오른쪽: ② 내 보상(과목 뱃지 + 가장 가까운 목표) ③ 찬스 바꾸기 ④ 명예의 전당
  *  <AceRewardsSheet> 별 잔액을 누르면 뜨는 "내 보상" 창: 별, 다음 목표, 쿠폰(보기만), 뱃지, 최근 내역
@@ -26,10 +26,10 @@ export interface RewardProps {
 
 export interface Goal { key: string; emoji: string; label: string; at: number; cur: number }
 
-const SUBJECT_SHORT: Record<SubjectId, string> = { math: '수학', hanja: '한자' };
+const SUBJECT_SHORT: Record<SubjectId, string> = { math: '수학', hanja: '한자', english: '영어' };
 
 function subjectEarned(w: Summary, s: SubjectId): number {
-  return s === 'math' ? w.mathEarned : w.hanjaEarned;
+  return s === 'math' ? w.mathEarned : s === 'english' ? w.englishEarned : w.hanjaEarned;
 }
 
 /** 다음 목표: 뱃지(과목 번 별), 찬스(남은 별), 명예의 전당(합산 번 별) — 남은 별이 적은 순 */
@@ -105,7 +105,7 @@ export function AceRewardCards({ subject, badges, gotIds, onOpen }: RewardProps 
       <motion.button whileTap={{ scale: 0.97 }} onClick={() => goHome('shop')}
         className="w-full bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-dashed border-amber-300 rounded-2xl p-4">
         <div className="flex items-center justify-center gap-2 text-amber-600 font-black text-sm mb-1">🎁 에이스 홈에서 찬스 바꾸기</div>
-        <p className="text-center text-[11px] text-amber-500">{couponCount > 0 ? `내 쿠폰 ${couponCount}장 · ` : ''}수학과 한자 별을 함께 써요</p>
+        <p className="text-center text-[11px] text-amber-500">{couponCount > 0 ? `내 쿠폰 ${couponCount}장 · ` : ''}모든 과목 별을 함께 써요</p>
       </motion.button>
 
       {/* ④ 명예의 전당 (한 번이라도 들어갔을 때) */}
@@ -114,7 +114,7 @@ export function AceRewardCards({ subject, badges, gotIds, onOpen }: RewardProps 
           className="w-full bg-gradient-to-br from-brand-500 to-brand-700 rounded-2xl p-4 text-center text-white shadow-lg">
           <div className="text-2xl mb-1">👑</div>
           <div className="font-black">명예의 전당{w.hallCount > 1 ? ` ${w.hallCount}번` : ''}</div>
-          <div className="text-xs opacity-90">수학과 한자로 모은 별 {w.earned}개!</div>
+          <div className="text-xs opacity-90">모든 과목에서 모은 별 {w.earned}개!</div>
         </motion.button>
       )}
     </>
@@ -149,7 +149,7 @@ export function AceRewardsSheet({ open, onClose, childName, subject, badges, got
                 <div className="flex items-center gap-2 text-4xl font-black text-slate-900 font-display mt-1">
                   <Star size={32} className="fill-amber-400 text-amber-400" />{w.balance}<span className="text-base text-slate-400 font-bold">개</span>
                 </div>
-                <p className="text-xs text-slate-400 font-medium mt-1">5문제 맞힐 때마다 별 1개 · 수학과 한자 별을 함께 써요</p>
+                <p className="text-xs text-slate-400 font-medium mt-1">5문제 맞힐 때마다 별 1개 · 모든 과목 별을 함께 써요</p>
               </div>
               <button onClick={onClose} aria-label="닫기"
                 className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center active:scale-90"><X size={20} /></button>
@@ -264,7 +264,7 @@ export function AceRewardsSheet({ open, onClose, childName, subject, badges, got
               <div className="bg-gradient-to-br from-brand-500 to-brand-700 rounded-2xl p-5 text-center text-white">
                 <div className="text-3xl mb-1">👑</div>
                 <div className="font-black">명예의 전당 {w.hallCount}번</div>
-                <div className="text-xs opacity-90 mt-1">수학과 한자로 별 {w.earned}개를 모았어요!</div>
+                <div className="text-xs opacity-90 mt-1">모든 과목에서 별 {w.earned}개를 모았어요!</div>
               </div>
             )}
           </motion.div>
