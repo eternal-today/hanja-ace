@@ -20,7 +20,7 @@ export type SubjectId = 'math' | 'hanja' | 'english';
 export const SUBJECTS: { id: SubjectId; name: string; href: string; mark: string; color: string }[] = [
   { id: 'math', name: '수학 에이스', href: LINKS.math, mark: '+', color: '#2452e9' },
   { id: 'hanja', name: '한자 에이스', href: LINKS.hanja, mark: '漢', color: '#6d3fe0' },
-  { id: 'english', name: '영어 에이스', href: LINKS.english, mark: 'A', color: '#a8781a' },
+  { id: 'english', name: '영어 에이스', href: LINKS.english, mark: 'A', color: '#c3613a' },
 ];
 
 /** 에이스 홈(허브)으로 이동. view: 'shop'(찬스 가게), 'coupons'(쿠폰함) */
