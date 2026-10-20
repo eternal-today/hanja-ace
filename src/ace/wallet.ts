@@ -13,6 +13,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { Chance, TIER_BY_ID, Tier } from './chances';
+import { prefsChanged } from './prefs';
 
 // ─────────────────────────────────────────────
 // 저장 키
@@ -501,7 +502,7 @@ export function childName(): string {
 export function hubPin(): string {
   try { return localStorage.getItem(K.pin) || ''; } catch { return ''; }
 }
-export function setHubPin(pin: string) { localStorage.setItem(K.pin, pin); }
+export function setHubPin(pin: string) { localStorage.setItem(K.pin, pin); prefsChanged(); }
 /** 과목 앱 PIN들 (수학, 한자, 영어. 바꾸지 않았으면 1234) */
 export function subjectPins(): string[] {
   const get = (k: string) => { try { return localStorage.getItem(k) || '1234'; } catch { return '1234'; } };

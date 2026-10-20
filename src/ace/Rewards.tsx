@@ -154,7 +154,7 @@ export function AceRewardsSheet({ open, onClose, childName, subject, badges, got
               <button onClick={onClose} aria-label="닫기"
                 className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center active:scale-90"><X size={20} /></button>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center -mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center -mt-2">
               {SUBJECTS.map(s => (
                 <div key={s.id} className="bg-slate-50 rounded-2xl p-3">
                   <div className="text-lg font-black font-display" style={{ color: s.color }}>{subjectEarned(w, s.id)}</div>

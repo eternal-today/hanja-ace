@@ -8,6 +8,7 @@
  *   hanja   : 한자 기록 (한자 앱이 올림)
  *   english : 영어 기록 요약 (영어 앱이 올림. 별 계산에 필요한 것만)
  *   wallet  : 공통 장부(힌트), 찬스 쿠폰, 축하 완료 목록 (모든 앱이 올림)
+ *   prefs   : 부모님 설정 (한자·영어 설정과 PIN, 에이스 홈 PIN, AI 키 — prefs.ts)
  * 연결 정보(웹 앱 URL·가족 코드)는 수학 앱에 넣어 둔 값을 함께 쓰고,
  * 수학 앱에서 연결하지 않은 기기는 허브 부모 화면에서 따로 넣을 수 있음.
  */
@@ -15,6 +16,7 @@ import {
   SyncProfile, readDirty, writeDirty, walletRecordFor, hanjaRecordFor, englishRecordFor, walletUpdatedAt,
   applyServerWallet, applyServerHanja, applyServerEnglish, applyServerMath, notifyWallet, onWalletDirty,
 } from './wallet';
+import { applyServerPrefs, initPrefs, prefsOutbox, prefsPendingCount, prefsSent, setPrefsHook } from './prefs';
 
 const KEY = {
   url: 'ace_sync_url', token: 'ace_sync_token',
@@ -50,7 +52,7 @@ let status: AceSyncStatus = { state: 'off', lastAt: 0, pending: 0, error: '' };
 const statusListeners = new Set<(s: AceSyncStatus) => void>();
 function setStatus(patch: Partial<AceSyncStatus>) {
   const d = readDirty();
-  status = { ...status, ...patch, lastAt: Number(localStorage.getItem(KEY.lastAt) || 0), pending: d.wallet.length + d.hanja.length + d.english.length };
+  status = { ...status, ...patch, lastAt: Number(localStorage.getItem(KEY.lastAt) || 0), pending: d.wallet.length + d.hanja.length + d.english.length + prefsPendingCount() };
   if (!getAceSyncSettings()) status.state = 'off';
   statusListeners.forEach(fn => fn(status));
 }
@@ -134,6 +136,16 @@ async function syncProfile(cfg: { url: string; token: string }, p: Profile) {
   localStorage.setItem(KEY.cursor(p), String(res.seq || since));
 }
 
+/** 부모님 설정 동기화 (prefs.ts) */
+async function syncPrefs(cfg: { url: string; token: string }) {
+  const { records, sent } = await prefsOutbox(cfg.token);
+  const since = Number(localStorage.getItem(KEY.cursor('prefs')) || 0);
+  const res = await post(cfg.url, { action: 'sync', token: cfg.token, profileId: 'prefs', since, records: records.map(r => ({ ...r, profileId: 'prefs' })) });
+  prefsSent(sent);
+  await applyServerPrefs(Array.isArray(res.records) ? res.records : [], cfg.token);
+  localStorage.setItem(KEY.cursor('prefs'), String(res.seq || since));
+}
+
 let opts = { pullMath: true };
 let inflight: Promise<void> | null = null;
 let again = false;
@@ -145,6 +157,7 @@ export async function runAceSync(): Promise<void> {
   inflight = (async () => {
     setStatus({ state: 'syncing', error: '' });
     try {
+      await syncPrefs(cfg);
       await syncProfile(cfg, 'wallet');
       await syncProfile(cfg, 'hanja');
       await syncProfile(cfg, 'english');
@@ -181,6 +194,8 @@ export function startAceSync(o: { pullMath: boolean }) {
   if (started) return;
   started = true;
   onWalletDirty(() => scheduleAceSync());
+  initPrefs();
+  setPrefsHook(() => scheduleAceSync(800));
   setStatus({ state: getAceSyncSettings() ? 'idle' : 'off' });
   scheduleAceSync(600);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') scheduleAceSync(300); });

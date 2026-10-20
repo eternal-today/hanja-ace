@@ -13,6 +13,7 @@ import { useSyncExternalStore } from 'react';
 import { Card, Chance, Config, Coupon, RoundRecord, Spend } from '../types';
 import { GROUPS } from '../data';
 import { markDirty, notifyWallet, spendHint, summary, takeCelebration } from '../ace/wallet';
+import { onPrefsApplied, prefsChanged } from '../ace/prefs';
 
 const P = 'hanja_';
 const K = {
@@ -117,8 +118,16 @@ function commit(patch: Partial<State>) {
     if (patch.confusions) localStorage.setItem(K.confusions, JSON.stringify(state.confusions));
     if (patch.pin) localStorage.setItem(K.pin, state.pin);
   } catch (e) { console.error('저장 실패', e); }
+  if (patch.config || patch.pin) prefsChanged();   // 부모님 설정 → 다른 기기에도
   listeners.forEach(fn => fn());
 }
+
+// 다른 기기에서 고친 부모님 설정(설정·PIN)이 넘어오면 다시 읽음
+onPrefsApplied(() => {
+  const fresh = load();
+  state = { ...state, config: fresh.config, pin: fresh.pin };
+  listeners.forEach(fn => fn());
+});
 
 export const getState = () => state;
 export function useStore(): State {

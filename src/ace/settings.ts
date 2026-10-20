@@ -3,9 +3,11 @@
  * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
  *
  * 키는 에이스 홈 부모님 모드에서 한 번 넣으면 모든 에이스가 함께 씀.
- * 기기 안에만 저장하고 서버(동기화)로는 보내지 않음 → 기기마다 한 번씩 넣음.
+ * 동기화 서버로 가족 코드로 잠가서 올리므로, 한 기기에서 넣으면 다른 기기에도 적용됨 (prefs.ts).
  * 에이스 홈에 넣은 키가 없으면 각 앱에 따로 넣어 둔 키를 씀 (예전 방식).
  */
+import { prefsChanged } from './prefs';
+
 const KEY = 'ace_gemini_key';
 
 function get(k: string): string {
@@ -19,6 +21,7 @@ export function setHubGeminiKey(k: string) {
     if (k.trim()) localStorage.setItem(KEY, k.trim());
     else localStorage.removeItem(KEY);
   } catch { /* 저장 실패는 무시 */ }
+  prefsChanged();
 }
 
 /** 실제로 쓸 키: 에이스 홈 키 → 이 앱에 넣은 키 */

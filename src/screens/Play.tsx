@@ -389,7 +389,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                 이번 판: 번 별 {record.stars}개{spent > 0 ? ` · 힌트에 쓴 별 ${spent}개` : ''}
                 <span className="text-amber-400 font-medium"> · 5문제 맞힐 때마다 별 1개</span>
               </p>
-              <p className="text-[11px] font-bold text-amber-500 mt-0.5">수학과 한자에서 모은 별을 함께 써요</p>
+              <p className="text-[11px] font-bold text-amber-500 mt-0.5">모든 과목에서 모은 별을 함께 써요</p>
               {record.lowAcc && (
                 <p className="text-xs font-black text-rose-500 mt-2 bg-white rounded-xl px-3 py-2">
                   10문제 중 4문제보다 적게 맞혀서 이번 판은 별이 없어요. 천천히 생각하고 고르면 별을 받을 수 있어! 💪

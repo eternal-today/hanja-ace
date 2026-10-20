@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Award, Check, CheckCircle2, ChevronLeft, ChevronRight, Database, Gift, History, Home, Lightbulb, Lock,
   ListOrdered, Plus, Settings, Smartphone, Sparkles, Star, Trash2, XCircle,
@@ -75,6 +75,14 @@ export default function Parent({ onHome }: { onHome: () => void }) {
   const store = useStore();
   const [tab, setTab] = useState<'settings' | 'chance' | 'records'>('settings');
   const [draft, setDraft] = useState<Config>(store.config);
+  // 다른 기기에서 설정이 넘어오면, 고치던 중이 아닐 때만 화면 값도 바꿈
+  const shownCfg = useRef(store.config);
+  useEffect(() => {
+    if (store.config === shownCfg.current) return;
+    const prev = shownCfg.current;
+    shownCfg.current = store.config;
+    setDraft(d => (JSON.stringify(d) === JSON.stringify(prev) ? store.config : d));
+  }, [store.config]);
   const [stage, setStage] = useState(() => STAGES.find(st => store.config.groupIds.some(id => id.startsWith(st + '-'))) || '8급');
   const [newPin, setNewPin] = useState('');
   const [selected, setSelected] = useState<RoundRecord | null>(null);
@@ -344,7 +352,7 @@ export default function Parent({ onHome }: { onHome: () => void }) {
               <Card dim>
                 <Title icon={<Database size={18} className="text-slate-400" />}>기록 백업</Title>
                 <p className="text-sm text-slate-500 leading-relaxed">
-                  기록·별·쿠폰·설정은 이 기기에만 저장됩니다. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업 파일로 내려받아 두세요.
+                  별·쿠폰과 설정·PIN은 동기화 서버로 다른 기기와 맞춰집니다. 기억 상자는 이 기기에만 저장됩니다. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업 파일로 내려받아 두세요.
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button className="btn-secondary py-3 text-sm" onClick={exportBackup}>백업 파일 받기</button>

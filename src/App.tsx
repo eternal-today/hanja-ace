@@ -114,7 +114,7 @@ export default function App() {
               <h2 className={`text-3xl font-black font-display mb-2 ${milestone.hall ? 'text-brand-600' : 'text-slate-900'}`}>
                 {milestone.hall ? '명예의 전당 입성!' : milestone.value ? `별 ${milestone.value}개를 모았어!` : '새 뱃지!'}
               </h2>
-              {milestone.value > 0 && <p className="text-xs font-bold text-slate-400 mb-2">수학과 한자에서 모은 별 {milestone.value}개</p>}
+              {milestone.value > 0 && <p className="text-xs font-bold text-slate-400 mb-2">모든 과목에서 모은 별 {milestone.value}개</p>}
               <p className="text-slate-500 font-medium">
                 {milestone.badge
                   ? <>한자 뱃지 <strong className="text-brand-600">‘{milestone.badge}’</strong>를 받았어요!</>
