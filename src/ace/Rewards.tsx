@@ -1,6 +1,6 @@
 /**
  * 과목 앱 아이 홈의 보상 부분 — 모든 에이스가 같은 모양으로 씀
- * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
+ * ※ src/ace 폴더는 허브·수학·한자·영어·생각 다섯 저장소에 똑같이 들어 있음. 고치면 다섯 곳에 같이 복사.
  *
  *  <AceRewardCards>  아이 홈 오른쪽: ② 내 보상(과목 뱃지 + 가장 가까운 목표) ③ 찬스 바꾸기 ④ 명예의 전당
  *  <AceRewardsSheet> 별 잔액을 누르면 뜨는 "내 보상" 창: 별, 다음 목표, 쿠폰(보기만), 뱃지, 최근 내역
@@ -26,10 +26,10 @@ export interface RewardProps {
 
 export interface Goal { key: string; emoji: string; label: string; at: number; cur: number }
 
-const SUBJECT_SHORT: Record<SubjectId, string> = { math: '수학', hanja: '한자', english: '영어' };
+const SUBJECT_SHORT: Record<SubjectId, string> = { math: '수학', hanja: '한자', english: '영어', thinking: '생각' };
 
 function subjectEarned(w: Summary, s: SubjectId): number {
-  return s === 'math' ? w.mathEarned : s === 'english' ? w.englishEarned : w.hanjaEarned;
+  return s === 'math' ? w.mathEarned : s === 'english' ? w.englishEarned : s === 'thinking' ? w.thinkingEarned : w.hanjaEarned;
 }
 
 /** 다음 목표: 뱃지(과목 번 별), 찬스(남은 별), 명예의 전당(합산 번 별) — 남은 별이 적은 순 */

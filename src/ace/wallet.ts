@@ -1,10 +1,10 @@
 /**
  * 에이스 시리즈 공통 별 지갑 — 규칙 문서(common/star-chance-rules.md) 1·2·4·8번
- * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
+ * ※ src/ace 폴더는 허브·수학·한자·영어·생각 다섯 저장소에 똑같이 들어 있음. 고치면 다섯 곳에 같이 복사.
  *
- * 네 앱이 같은 주소(eternal-today.github.io) 아래에 있어 기기 저장소를 함께 씀.
+ * 다섯 앱이 같은 주소(eternal-today.github.io) 아래에 있어 기기 저장소를 함께 씀.
  *
- * 남은 별 = 수학 번 별 + 한자 번 별 + 영어 번 별 + 부모님이 준 별
+ * 남은 별 = 수학 번 별 + 한자 번 별 + 영어 번 별 + 생각 번 별 + 부모님이 준 별
  *         − 수학 기록 속 힌트 별 − 공통 장부의 힌트 별 − 쿠폰 가격(되돌린 쿠폰 제외)
  *  - 부모님이 준 별(용돈처럼)은 남은 별에만 더함. 축하·명예의 전당·뱃지(공부로 번 별)에는 넣지 않음
  *  - 번 별은 각 과목 기록에서 계산 (숫자를 따로 옮기지 않음)
@@ -30,20 +30,24 @@ export const K = {
   cacheEnglish: 'ace_cache_english',   // 다른 기기에서 받은 영어 기록 요약
   migratedEnglish: 'ace_migrated_english_v1',
   englishGone: 'ace_english_deleted',  // { [ts]: 지운 시각 } 부모님이 지운 영어 기록 (다른 기기에도 지운 것으로 알림)
-  dirty: 'ace_sync_dirty',         // { wallet: number[], hanja: number[], english: number[] } 아직 서버에 안 올린 것
+  cacheThinking: 'ace_cache_thinking',   // 다른 기기에서 받은 생각 기록 요약
+  migratedThinking: 'ace_migrated_thinking_v1',
+  thinkingGone: 'ace_thinking_deleted',  // { [ts]: 지운 시각 } 부모님이 지운 생각 기록
+  dirty: 'ace_sync_dirty',         // { wallet, hanja, english, thinking: number[] } 아직 서버에 안 올린 것
 };
 
 /** 다른 앱이 쓰는 키 (대부분 읽기만) */
 const MATH = { records: 'records', wish: 'wish_coupons', used: 'used_coupons', config: 'app_config', pin: 'parent_pin' };
 const HANJA = { records: 'hanja_records', spends: 'hanja_spends', coupons: 'hanja_coupons', config: 'hanja_config', pin: 'hanja_parent_pin' };
 const ENGLISH = { records: 'english_records', config: 'english_config', pin: 'english_parent_pin' };
+const THINKING = { records: 'thinking_records', config: 'thinking_config', pin: 'thinking_parent_pin' };
 
 const DAY = 24 * 60 * 60 * 1000;
 
 // ─────────────────────────────────────────────
 // 타입
 // ─────────────────────────────────────────────
-export type Subject = 'math' | 'hanja' | 'english';
+export type Subject = 'math' | 'hanja' | 'english' | 'thinking';
 
 export interface LedgerEntry {
   id: number;
@@ -74,6 +78,7 @@ export interface Summary {
   mathEarned: number;
   hanjaEarned: number;
   englishEarned: number;
+  thinkingEarned: number;
   earned: number;        // 합산 번 별 (축하·명예의 전당 기준, 공부로 번 별만)
   gifted: number;        // 부모님이 준 별 (뺀 것 포함한 합계)
   spent: number;         // 쓴 별 전체
@@ -82,6 +87,7 @@ export interface Summary {
   todayMath: number;     // 오늘 푼 문제 수
   todayHanja: number;
   todayEnglish: number;
+  todayThinking: number;
 }
 
 // ─────────────────────────────────────────────
@@ -127,7 +133,7 @@ export function onWalletDirty(fn: () => void) { changeHooks.add(fn); return () =
 function subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; }
 if (typeof window !== 'undefined') {
   // 같은 기기의 다른 탭(다른 에이스 앱)에서 바꾼 경우
-  window.addEventListener('storage', e => { if (!e.key || e.key.startsWith('ace_') || e.key === MATH.records || e.key === HANJA.records || e.key === ENGLISH.records) notifyWallet(); });
+  window.addEventListener('storage', e => { if (!e.key || e.key.startsWith('ace_') || e.key === MATH.records || e.key === HANJA.records || e.key === ENGLISH.records || e.key === THINKING.records) notifyWallet(); });
 }
 
 /** 지갑 요약을 쓰는 화면용 훅 */
@@ -139,10 +145,10 @@ export function useWallet(): Summary {
 // ─────────────────────────────────────────────
 // 동기화 대기열
 // ─────────────────────────────────────────────
-export type SyncProfile = 'wallet' | 'hanja' | 'english';
+export type SyncProfile = 'wallet' | 'hanja' | 'english' | 'thinking';
 export function readDirty(): Record<SyncProfile, number[]> {
   const d = readJSON<Partial<Record<SyncProfile, number[]>>>(K.dirty, {});
-  return { wallet: d.wallet || [], hanja: d.hanja || [], english: d.english || [] };
+  return { wallet: d.wallet || [], hanja: d.hanja || [], english: d.english || [], thinking: d.thinking || [] };
 }
 export function writeDirty(d: Record<SyncProfile, number[]>) { writeJSON(K.dirty, d); }
 export function markDirty(p: SyncProfile, id: number) {
@@ -199,6 +205,21 @@ function englishRows(): Map<number, EnglishRow> {
   return out;
 }
 
+/** 생각 기록 (영어와 같은 방식). 부모님이 지운 기록은 뺌 */
+function thinkingGone(): Record<string, number> { return readJSON<Record<string, number>>(K.thinkingGone, {}); }
+function thinkingRows(): Map<number, EnglishRow> {
+  const out = new Map<number, EnglishRow>();
+  const cache = readJSON<Record<string, EnglishRow>>(K.cacheThinking, {});
+  for (const [k, v] of Object.entries(cache)) if (!v.d) out.set(Number(k), v);
+  const local = readJSON<any[]>(THINKING.records, []);
+  for (const r of Array.isArray(local) ? local : []) {
+    if (!r || typeof r.ts !== 'number') continue;
+    out.set(r.ts, { s: Number(r.stars) || 0, c: Number(r.correct) || 0, t: Number(r.total) || 0, u: r.ts });
+  }
+  for (const ts of Object.keys(thinkingGone())) out.delete(Number(ts));
+  return out;
+}
+
 export function ledger(): LedgerEntry[] {
   return Object.values(readJSON<Record<string, LedgerEntry>>(K.ledger, {})).sort((a, b) => b.id - a.id);
 }
@@ -231,13 +252,18 @@ export function summary(now = Date.now()): Summary {
     englishEarned += r.s;
     if (ts >= today) todayEnglish += r.t;
   }
-  const earned = mathEarned + hanjaEarned + englishEarned;
+  let thinkingEarned = 0, todayThinking = 0;
+  for (const [ts, r] of thinkingRows()) {
+    thinkingEarned += r.s;
+    if (ts >= today) todayThinking += r.t;
+  }
+  const earned = mathEarned + hanjaEarned + englishEarned + thinkingEarned;
   const spent = mathHint + ledgerHint + couponSpent;
   return {
-    mathEarned, hanjaEarned, englishEarned, earned, gifted, spent,
+    mathEarned, hanjaEarned, englishEarned, thinkingEarned, earned, gifted, spent,
     balance: Math.max(0, earned + gifted - spent),
     hallCount: Math.floor(earned / 100),
-    todayMath, todayHanja, todayEnglish,
+    todayMath, todayHanja, todayEnglish, todayThinking,
   };
 }
 
@@ -248,7 +274,7 @@ export function spendHistory(limit = 50): SpendRow[] {
   const rows: SpendRow[] = [];
   for (const e of ledger()) {
     if (e.kind === 'gift') rows.push({ at: e.id, label: `${e.amount >= 0 ? '🎁 부모님이 준 별' : '✏️ 부모님이 뺀 별'}${e.note ? ` (${e.note})` : ''}`, amount: e.amount, gift: true });
-    else rows.push({ at: e.id, label: `💡 ${e.subject === 'math' ? '수학' : e.subject === 'english' ? '영어' : '한자'} 힌트${e.note ? ` (${e.note})` : ''}`, amount: e.amount });
+    else rows.push({ at: e.id, label: `💡 ${SUBJECT_KO[e.subject] || '한자'} 힌트${e.note ? ` (${e.note})` : ''}`, amount: e.amount });
   }
   for (const c of coupons()) rows.push({ at: c.boughtAt, label: `${c.emoji} ${c.name}`, amount: c.price, refunded: !!c.canceledAt });
   const local = readJSON<Record<string, any>>(MATH.records, {});
@@ -267,6 +293,7 @@ export function spendHistory(limit = 50): SpendRow[] {
 // 힌트로 별 쓰기 (모든 과목 1개)
 // ─────────────────────────────────────────────
 export const HINT_COST = 1;
+const SUBJECT_KO: Record<Subject, string> = { math: '수학', hanja: '한자', english: '영어', thinking: '생각' };
 
 /** 공통 장부에 힌트 1회를 적음. 별이 모자라면 false */
 export function spendHint(subject: Subject, note: string): boolean {
@@ -492,7 +519,8 @@ export function childName(): string {
   const m = readJSON<any>(MATH.config, {});
   const h = readJSON<any>(HANJA.config, {});
   const e = readJSON<any>(ENGLISH.config, {});
-  return String(m?.childName || h?.childName || e?.childName || '').trim();
+  const t = readJSON<any>(THINKING.config, {});
+  return String(m?.childName || h?.childName || e?.childName || t?.childName || '').trim();
 }
 /** 허브 부모 PIN: 허브에서 정한 값 → 수학 PIN → 한자 PIN → 1234 */
 /**
@@ -503,19 +531,20 @@ export function hubPin(): string {
   try { return localStorage.getItem(K.pin) || ''; } catch { return ''; }
 }
 export function setHubPin(pin: string) { localStorage.setItem(K.pin, pin); prefsChanged(); }
-/** 과목 앱 PIN들 (수학, 한자, 영어. 바꾸지 않았으면 1234) */
+/** 과목 앱 PIN들 (수학, 한자, 영어, 생각. 바꾸지 않았으면 1234) */
 export function subjectPins(): string[] {
   const get = (k: string) => { try { return localStorage.getItem(k) || '1234'; } catch { return '1234'; } };
   // 영어 PIN은 바꾼 경우에만 (영어 앱을 아직 안 쓴 기기에서 처음 PIN 1234가 다시 통하지 않게)
-  let en = '';
-  try { en = localStorage.getItem(ENGLISH.pin) || ''; } catch { /* 없음 */ }
-  return [...new Set([get(MATH.pin), get(HANJA.pin), ...(en ? [en] : [])])];
+  // 영어·생각 PIN은 바꾼 경우에만 (그 앱을 아직 안 쓴 기기에서 처음 PIN 1234가 다시 통하지 않게)
+  let en = '', th = '';
+  try { en = localStorage.getItem(ENGLISH.pin) || ''; th = localStorage.getItem(THINKING.pin) || ''; } catch { /* 없음 */ }
+  return [...new Set([get(MATH.pin), get(HANJA.pin), ...(en ? [en] : []), ...(th ? [th] : [])])];
 }
 /** 새 에이스 홈 PIN으로 쓸 수 있는지. 안 되면 이유 */
 export function hubPinProblem(pin: string): string | null {
   if (!/^\d{4}$/.test(pin)) return 'PIN은 숫자 4자리예요';
   if (pin === '1234') return '처음 PIN(1234)은 쓸 수 없어요';
-  if (subjectPins().includes(pin)) return '수학·한자·영어 에이스 PIN과 다른 번호로 정해 주세요';
+  if (subjectPins().includes(pin)) return '과목 에이스(수학·한자·영어·생각) PIN과 다른 번호로 정해 주세요';
   return null;
 }
 
@@ -578,6 +607,43 @@ export function forgetEnglishRecords() {
   notifyWallet();
 }
 
+/** 생각 기록 → 서버로 보낼 것 (영어와 같음: 별 계산에 필요한 것만) */
+export function thinkingRecordFor(ts: number): any | null {
+  const gone = thinkingGone()[ts];
+  if (gone) return { ts, deleted: true, stars: 0, correct: 0, total: 0, updatedAt: gone };
+  const local = readJSON<any[]>(THINKING.records, []);
+  const r = Array.isArray(local) ? local.find(x => x && x.ts === ts) : null;
+  return r ? { ts: r.ts, date: r.date, menu: r.menu, stars: Number(r.stars) || 0, correct: Number(r.correct) || 0, total: Number(r.total) || 0, updatedAt: r.ts } : null;
+}
+export function applyServerThinking(records: any[]) {
+  if (!records.length) return;
+  const cache = readJSON<Record<string, EnglishRow>>(K.cacheThinking, {});
+  for (const r of records) {
+    if (!r || typeof r.ts !== 'number') continue;
+    const u = Number(r.updatedAt) || r.ts;
+    if (cache[r.ts] && cache[r.ts].u > u) continue;
+    cache[r.ts] = r.deleted ? { s: 0, c: 0, t: 0, u, d: true } : { s: Number(r.stars) || 0, c: Number(r.correct) || 0, t: Number(r.total) || 0, u };
+  }
+  writeJSON(K.cacheThinking, cache);
+}
+/** 생각 앱 처음 한 번: 이 기기의 생각 기록을 서버로 올림 */
+export function migrateThinkingRecords() {
+  if (localStorage.getItem(K.migratedThinking)) return;
+  const recs = readJSON<any[]>(THINKING.records, []);
+  for (const r of Array.isArray(recs) ? recs : []) if (r && typeof r.ts === 'number') markDirty('thinking', r.ts);
+  localStorage.setItem(K.migratedThinking, '1');
+}
+/** 생각 기록 지우기 (부모님): 지운 것으로 표시하고 서버에도 알림 */
+export function forgetThinkingRecords() {
+  const gone = thinkingGone();
+  const now = Date.now();
+  const ids = new Set<number>(Object.keys(readJSON<Record<string, EnglishRow>>(K.cacheThinking, {})).map(Number));
+  for (const r of readJSON<any[]>(THINKING.records, [])) if (r && typeof r.ts === 'number') ids.add(r.ts);
+  for (const ts of ids) if (!gone[ts]) { gone[ts] = now; markDirty('thinking', ts); }
+  writeJSON(K.thinkingGone, gone);
+  notifyWallet();
+}
+
 /** 서버에서 받은 지갑 기록 반영 (같은 번호는 나중에 고친 쪽이 이김, 축하는 합침) */
 export function applyServerWallet(records: any[]) {
   if (!records.length) return;
@@ -588,7 +654,7 @@ export function applyServerWallet(records: any[]) {
     if (!r || typeof r.ts !== 'number') continue;
     const u = Number(r.updatedAt) || r.ts;
     if (r.kind === 'hint' || r.kind === 'gift') {
-      if (!led[r.ts] || u > led[r.ts].updatedAt) led[r.ts] = { id: r.ts, kind: r.kind, amount: Number(r.amount) || 0, subject: r.subject === 'math' ? 'math' : r.subject === 'english' ? 'english' : 'hanja', note: String(r.note || ''), updatedAt: u };
+      if (!led[r.ts] || u > led[r.ts].updatedAt) led[r.ts] = { id: r.ts, kind: r.kind, amount: Number(r.amount) || 0, subject: r.subject === 'math' || r.subject === 'english' || r.subject === 'thinking' ? r.subject : 'hanja', note: String(r.note || ''), updatedAt: u };
     } else if (r.kind === 'coupon') {
       if (!cps[r.ts] || u > cps[r.ts].updatedAt) {
         const { kind, ts, profileId, ...rest } = r;

@@ -1,6 +1,6 @@
 /**
  * 찬스 목록과 단계 — 규칙 문서(common/star-chance-rules.md) 4·5번
- * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
+ * ※ src/ace 폴더는 허브·수학·한자·영어·생각 다섯 저장소에 똑같이 들어 있음. 고치면 다섯 곳에 같이 복사.
  */
 
 export type Tier = 'light' | 'mid' | 'big' | 'special';

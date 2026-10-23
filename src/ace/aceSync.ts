@@ -1,20 +1,21 @@
 /**
- * 에이스 지갑·한자·영어 기록의 기기 간 동기화
- * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
+ * 에이스 지갑·한자·영어·생각 기록의 기기 간 동기화
+ * ※ src/ace 폴더는 허브·수학·한자·영어·생각 다섯 저장소에 똑같이 들어 있음. 고치면 다섯 곳에 같이 복사.
  *
  * 수학 에이스의 동기화 서버(Google Apps Script)를 그대로 씀. 서버 코드는 고치지 않음.
  * 서버는 데이터를 이름표(profileId)별로 따로 보관하므로 이름표만 나눠 씀.
  *   default : 수학 기록 (수학 앱이 올림, 여기서는 읽기만)
  *   hanja   : 한자 기록 (한자 앱이 올림)
  *   english : 영어 기록 요약 (영어 앱이 올림. 별 계산에 필요한 것만)
+ *   thinking: 생각 기록 요약 (생각 앱이 올림. 별 계산에 필요한 것만)
  *   wallet  : 공통 장부(힌트), 찬스 쿠폰, 축하 완료 목록 (모든 앱이 올림)
- *   prefs   : 부모님 설정 (한자·영어 설정과 PIN, 에이스 홈 PIN, AI 키 — prefs.ts)
+ *   prefs   : 부모님 설정 (한자·영어·생각 설정과 PIN, 생각 해설 PIN, 에이스 홈 PIN, AI 키 — prefs.ts)
  * 연결 정보(웹 앱 URL·가족 코드)는 수학 앱에 넣어 둔 값을 함께 쓰고,
  * 수학 앱에서 연결하지 않은 기기는 허브 부모 화면에서 따로 넣을 수 있음.
  */
 import {
-  SyncProfile, readDirty, writeDirty, walletRecordFor, hanjaRecordFor, englishRecordFor, walletUpdatedAt,
-  applyServerWallet, applyServerHanja, applyServerEnglish, applyServerMath, notifyWallet, onWalletDirty,
+  SyncProfile, readDirty, writeDirty, walletRecordFor, hanjaRecordFor, englishRecordFor, thinkingRecordFor, walletUpdatedAt,
+  applyServerWallet, applyServerHanja, applyServerEnglish, applyServerThinking, applyServerMath, notifyWallet, onWalletDirty,
 } from './wallet';
 import { applyServerPrefs, initPrefs, prefsOutbox, prefsPendingCount, prefsSent, setPrefsHook } from './prefs';
 
@@ -52,7 +53,7 @@ let status: AceSyncStatus = { state: 'off', lastAt: 0, pending: 0, error: '' };
 const statusListeners = new Set<(s: AceSyncStatus) => void>();
 function setStatus(patch: Partial<AceSyncStatus>) {
   const d = readDirty();
-  status = { ...status, ...patch, lastAt: Number(localStorage.getItem(KEY.lastAt) || 0), pending: d.wallet.length + d.hanja.length + d.english.length + prefsPendingCount() };
+  status = { ...status, ...patch, lastAt: Number(localStorage.getItem(KEY.lastAt) || 0), pending: d.wallet.length + d.hanja.length + d.english.length + d.thinking.length + prefsPendingCount() };
   if (!getAceSyncSettings()) status.state = 'off';
   statusListeners.forEach(fn => fn(status));
 }
@@ -100,10 +101,10 @@ export async function checkAceServer(url: string, token: string) {
 // 한 이름표 동기화: 대기열을 올리고, 마지막 위치 이후 바뀐 것을 받음
 // ─────────────────────────────────────────────
 /** 대기열 번호 → 보낼 기록 */
-const recordFor = (p: SyncProfile, id: number) => (p === 'wallet' ? walletRecordFor(id) : p === 'english' ? englishRecordFor(id) : hanjaRecordFor(id));
+const recordFor = (p: SyncProfile, id: number) => (p === 'wallet' ? walletRecordFor(id) : p === 'english' ? englishRecordFor(id) : p === 'thinking' ? thinkingRecordFor(id) : hanjaRecordFor(id));
 
 async function syncProfile(cfg: { url: string; token: string }, p: Profile) {
-  const pushable = p === 'wallet' || p === 'hanja' || p === 'english';
+  const pushable = p === 'wallet' || p === 'hanja' || p === 'english' || p === 'thinking';
   const dirty = readDirty();
   const ids = pushable ? dirty[p as SyncProfile] : [];
   const sent = new Map<number, number>();
@@ -120,6 +121,7 @@ async function syncProfile(cfg: { url: string; token: string }, p: Profile) {
   if (p === 'wallet') applyServerWallet(recs);
   else if (p === 'hanja') applyServerHanja(recs);
   else if (p === 'english') applyServerEnglish(recs);
+  else if (p === 'thinking') applyServerThinking(recs);
   else applyServerMath(recs);
 
   if (pushable) {
@@ -161,6 +163,7 @@ export async function runAceSync(): Promise<void> {
       await syncProfile(cfg, 'wallet');
       await syncProfile(cfg, 'hanja');
       await syncProfile(cfg, 'english');
+      await syncProfile(cfg, 'thinking');
       if (opts.pullMath) await syncProfile(cfg, 'default');
       localStorage.setItem(KEY.lastAt, String(Date.now()));
       setStatus({ state: 'idle', error: '' });

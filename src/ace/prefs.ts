@@ -1,8 +1,8 @@
 /**
  * 부모님 설정의 기기 간 동기화 (이름표 prefs)
- * ※ src/ace 폴더는 허브·수학·한자·영어 네 저장소에 똑같이 들어 있음. 고치면 네 곳에 같이 복사.
+ * ※ src/ace 폴더는 허브·수학·한자·영어·생각 다섯 저장소에 똑같이 들어 있음. 고치면 다섯 곳에 같이 복사.
  *
- * 맞추는 것: 한자·영어 설정과 PIN, 에이스 홈 PIN, AI 키(Gemini, 에이스 홈에 넣은 키)
+ * 맞추는 것: 한자·영어·생각 설정과 PIN, 생각 해설 PIN, 에이스 홈 PIN, AI 키(Gemini, 에이스 홈에 넣은 키)
  *   - 수학 설정·PIN은 수학 앱이 자기 동기화로 이미 맞춤 (여기서는 다루지 않음)
  *   - 한자 설정 안의 예전 AI 키(geminiKey)는 올리지 않음 (공통 키를 씀)
  * 방식: 항목마다 "마지막으로 고친 시각"을 두고, 서버와 비교해 더 나중에 고친 쪽이 이김.
@@ -32,6 +32,9 @@ const ITEMS: Item[] = [
   { id: 4, key: 'english_parent_pin', type: 'text', weight: () => count('english_records') },
   { id: 5, key: 'ace_pin', type: 'secret' },
   { id: 6, key: 'ace_gemini_key', type: 'secret' },
+  { id: 7, key: 'thinking_config', type: 'json', weight: () => count('thinking_records') },
+  { id: 8, key: 'thinking_parent_pin', type: 'text', weight: () => count('thinking_records') },
+  { id: 9, key: 'thinking_peek_pin', type: 'secret' },   // 생각 에이스 '부모님 해설' PIN (정답이 보이므로 잠가서 올림)
 ];
 const BY_ID = new Map(ITEMS.map(i => [i.id, i]));
 
