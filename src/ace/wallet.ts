@@ -4,7 +4,8 @@
  *
  * 다섯 앱이 같은 주소(eternal-today.github.io) 아래에 있어 기기 저장소를 함께 씀.
  *
- * 남은 별 = 수학 번 별 + 한자 번 별 + 영어 번 별 + 생각 번 별 + 부모님이 준 별
+ * 남은 별 = 수학 번 별 + 한자 번 별 + 영어 번 별 + 부모님이 준 별
+ *  - 생각 에이스는 별을 주지 않음 (2026-10-25). 생각 기록은 '오늘 푼 문제 수'에만 쓰고, 힌트로 쓴 별은 공통 장부에 적힘
  *         − 수학 기록 속 힌트 별 − 공통 장부의 힌트 별 − 쿠폰 가격(되돌린 쿠폰 제외)
  *  - 부모님이 준 별(용돈처럼)은 남은 별에만 더함. 축하·명예의 전당·뱃지(공부로 번 별)에는 넣지 않음
  *  - 번 별은 각 과목 기록에서 계산 (숫자를 따로 옮기지 않음)
@@ -78,7 +79,6 @@ export interface Summary {
   mathEarned: number;
   hanjaEarned: number;
   englishEarned: number;
-  thinkingEarned: number;
   earned: number;        // 합산 번 별 (축하·명예의 전당 기준, 공부로 번 별만)
   gifted: number;        // 부모님이 준 별 (뺀 것 포함한 합계)
   spent: number;         // 쓴 별 전체
@@ -252,15 +252,12 @@ export function summary(now = Date.now()): Summary {
     englishEarned += r.s;
     if (ts >= today) todayEnglish += r.t;
   }
-  let thinkingEarned = 0, todayThinking = 0;
-  for (const [ts, r] of thinkingRows()) {
-    thinkingEarned += r.s;
-    if (ts >= today) todayThinking += r.t;
-  }
-  const earned = mathEarned + hanjaEarned + englishEarned + thinkingEarned;
+  let todayThinking = 0;   // 생각 기록의 별은 세지 않음 (별 없는 과목)
+  for (const [ts, r] of thinkingRows()) if (ts >= today) todayThinking += r.t;
+  const earned = mathEarned + hanjaEarned + englishEarned;
   const spent = mathHint + ledgerHint + couponSpent;
   return {
-    mathEarned, hanjaEarned, englishEarned, thinkingEarned, earned, gifted, spent,
+    mathEarned, hanjaEarned, englishEarned, earned, gifted, spent,
     balance: Math.max(0, earned + gifted - spent),
     hallCount: Math.floor(earned / 100),
     todayMath, todayHanja, todayEnglish, todayThinking,
@@ -607,13 +604,13 @@ export function forgetEnglishRecords() {
   notifyWallet();
 }
 
-/** 생각 기록 → 서버로 보낼 것 (영어와 같음: 별 계산에 필요한 것만) */
+/** 생각 기록 → 서버로 보낼 것 (오늘 푼 문제 수 계산에 필요한 것만. 별은 늘 0으로 보냄) */
 export function thinkingRecordFor(ts: number): any | null {
   const gone = thinkingGone()[ts];
   if (gone) return { ts, deleted: true, stars: 0, correct: 0, total: 0, updatedAt: gone };
   const local = readJSON<any[]>(THINKING.records, []);
   const r = Array.isArray(local) ? local.find(x => x && x.ts === ts) : null;
-  return r ? { ts: r.ts, date: r.date, menu: r.menu, stars: Number(r.stars) || 0, correct: Number(r.correct) || 0, total: Number(r.total) || 0, updatedAt: r.ts } : null;
+  return r ? { ts: r.ts, date: r.date, menu: r.menu, stars: 0, correct: Number(r.correct) || 0, total: Number(r.total) || 0, updatedAt: r.ts } : null;
 }
 export function applyServerThinking(records: any[]) {
   if (!records.length) return;

@@ -18,11 +18,11 @@ export const LINKS = {
 export type SubjectId = 'math' | 'hanja' | 'english' | 'thinking';
 
 /** 과목 목록 — 새 과목을 만들면 여기에 한 줄 더함 (허브 카드, 앱 사이 이동 버튼에 쓰임) */
-export const SUBJECTS: { id: SubjectId; name: string; href: string; mark: string; color: string }[] = [
+export const SUBJECTS: { id: SubjectId; name: string; href: string; mark: string; color: string; noStars?: boolean }[] = [
   { id: 'math', name: '수학 에이스', href: LINKS.math, mark: '+', color: '#2452e9' },
   { id: 'hanja', name: '한자 에이스', href: LINKS.hanja, mark: '漢', color: '#6d3fe0' },
   { id: 'english', name: '영어 에이스', href: LINKS.english, mark: 'A', color: '#c3613a' },
-  { id: 'thinking', name: '생각 에이스', href: LINKS.thinking, mark: '생', color: '#0e828a' },
+  { id: 'thinking', name: '생각 에이스', href: LINKS.thinking, mark: '생', color: '#0e828a', noStars: true },   // 별을 주지 않는 과목 (나무에 물을 줌)
 ];
 
 /** 에이스 홈(허브)으로 이동. view: 'shop'(찬스 가게), 'coupons'(쿠폰함) */

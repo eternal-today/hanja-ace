@@ -29,7 +29,7 @@ export interface Goal { key: string; emoji: string; label: string; at: number; c
 const SUBJECT_SHORT: Record<SubjectId, string> = { math: '수학', hanja: '한자', english: '영어', thinking: '생각' };
 
 function subjectEarned(w: Summary, s: SubjectId): number {
-  return s === 'math' ? w.mathEarned : s === 'english' ? w.englishEarned : s === 'thinking' ? w.thinkingEarned : w.hanjaEarned;
+  return s === 'math' ? w.mathEarned : s === 'english' ? w.englishEarned : s === 'thinking' ? 0 : w.hanjaEarned;
 }
 
 /** 다음 목표: 뱃지(과목 번 별), 찬스(남은 별), 명예의 전당(합산 번 별) — 남은 별이 적은 순 */
@@ -155,7 +155,7 @@ export function AceRewardsSheet({ open, onClose, childName, subject, badges, got
                 className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center active:scale-90"><X size={20} /></button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center -mt-2">
-              {SUBJECTS.map(s => (
+              {SUBJECTS.filter(s => !s.noStars).map(s => (
                 <div key={s.id} className="bg-slate-50 rounded-2xl p-3">
                   <div className="text-lg font-black font-display" style={{ color: s.color }}>{subjectEarned(w, s.id)}</div>
                   <div className="text-[11px] font-bold text-slate-500">{SUBJECT_SHORT[s.id]}에서 번 별</div>
