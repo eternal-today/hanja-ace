@@ -32,6 +32,9 @@
 }
 
 @layer base {
+  /* 크롬에서 화면을 아래로 당겨 새로고침하는 동작 막기 (풀이 중 실수로 새로고침되지 않게).
+     안쪽 스크롤 칸에서 끝까지 당겨도 바깥(페이지)으로 넘어가지 않게 함. 새로고침은 브라우저 메뉴로 */
+  html, body { overscroll-behavior-y: none; }
   body {
     @apply font-sans text-slate-900 bg-slate-50 antialiased;
     -webkit-tap-highlight-color: transparent;
