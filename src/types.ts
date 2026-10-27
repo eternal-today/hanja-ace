@@ -71,6 +71,7 @@ export interface RoundRecord {
   total: number;
   stars: number;        // 이 판에서 번 별
   lowAcc?: boolean;     // 정답이 40%보다 적어 별을 받지 못한 판
+  paidPlay?: boolean;   // 놀이터 무료 2번 뒤 별을 내고 한 판 (별 없음)
   hintsFree: number;
   hintsPaid: number;
   groupNames: string[];

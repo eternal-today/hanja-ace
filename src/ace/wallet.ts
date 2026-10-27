@@ -52,7 +52,7 @@ export type Subject = 'math' | 'hanja' | 'english' | 'thinking';
 
 export interface LedgerEntry {
   id: number;
-  kind: 'hint' | 'gift';   // gift: 부모님이 준 별 (빼면 음수)
+  kind: 'hint' | 'gift' | 'play';   // gift: 부모님이 준 별 (빼면 음수), play: 놀이터 무료 횟수 뒤에 낸 별
   amount: number;
   subject: Subject;
   note: string;
@@ -271,6 +271,7 @@ export function spendHistory(limit = 50): SpendRow[] {
   const rows: SpendRow[] = [];
   for (const e of ledger()) {
     if (e.kind === 'gift') rows.push({ at: e.id, label: `${e.amount >= 0 ? '🎁 부모님이 준 별' : '✏️ 부모님이 뺀 별'}${e.note ? ` (${e.note})` : ''}`, amount: e.amount, gift: true });
+    else if (e.kind === 'play') rows.push({ at: e.id, label: `🎮 ${SUBJECT_KO[e.subject] || '한자'} 놀이터${e.note ? ` (${e.note})` : ''}`, amount: e.amount });
     else rows.push({ at: e.id, label: `💡 ${SUBJECT_KO[e.subject] || '한자'} 힌트${e.note ? ` (${e.note})` : ''}`, amount: e.amount });
   }
   for (const c of coupons()) rows.push({ at: c.boughtAt, label: `${c.emoji} ${c.name}`, amount: c.price, refunded: !!c.canceledAt });
@@ -291,6 +292,19 @@ export function spendHistory(limit = 50): SpendRow[] {
 // ─────────────────────────────────────────────
 export const HINT_COST = 1;
 const SUBJECT_KO: Record<Subject, string> = { math: '수학', hanja: '한자', english: '영어', thinking: '생각' };
+
+/** 놀이터: 그날 무료 횟수를 다 쓴 뒤 한 판에 별 1개 (playground.tsx) */
+export const PLAY_COST = 1;
+export function spendPlay(subject: Subject, note: string): boolean {
+  if (summary().balance < PLAY_COST) return false;
+  const all = readJSON<Record<string, LedgerEntry>>(K.ledger, {});
+  const id = newId();
+  all[id] = { id, kind: 'play', amount: PLAY_COST, subject, note: note.slice(0, 40), updatedAt: Date.now() };
+  writeJSON(K.ledger, all);
+  markDirty('wallet', id);
+  notifyWallet();
+  return true;
+}
 
 /** 공통 장부에 힌트 1회를 적음. 별이 모자라면 false */
 export function spendHint(subject: Subject, note: string): boolean {
@@ -551,7 +565,7 @@ export function hubPinProblem(pin: string): string | null {
 /** 대기열의 번호 → 서버로 보낼 기록 */
 export function walletRecordFor(id: number): any | null {
   const led = readJSON<Record<string, LedgerEntry>>(K.ledger, {});
-  if (led[id]) return { ...led[id], kind: led[id].kind === 'gift' ? 'gift' : 'hint', ts: id };
+  if (led[id]) return { ...led[id], kind: led[id].kind === 'gift' || led[id].kind === 'play' ? led[id].kind : 'hint', ts: id };
   const cps = readJSON<Record<string, Coupon>>(K.coupons, {});
   if (cps[id]) return { ...cps[id], kind: 'coupon', ts: id };
   if (celebrated().includes(id)) return { kind: 'cel', ts: id, updatedAt: id };
@@ -650,7 +664,7 @@ export function applyServerWallet(records: any[]) {
   for (const r of records) {
     if (!r || typeof r.ts !== 'number') continue;
     const u = Number(r.updatedAt) || r.ts;
-    if (r.kind === 'hint' || r.kind === 'gift') {
+    if (r.kind === 'hint' || r.kind === 'gift' || r.kind === 'play') {
       if (!led[r.ts] || u > led[r.ts].updatedAt) led[r.ts] = { id: r.ts, kind: r.kind, amount: Number(r.amount) || 0, subject: r.subject === 'math' || r.subject === 'english' || r.subject === 'thinking' ? r.subject : 'hanja', note: String(r.note || ''), updatedAt: u };
     } else if (r.kind === 'coupon') {
       if (!cps[r.ts] || u > cps[r.ts].updatedAt) {

@@ -6,6 +6,8 @@ import { initCelebration, migrateHanjaLegacy } from './ace/wallet';
 import { startAceSync } from './ace/aceSync';
 import { AceRewardsSheet } from './ace/Rewards';
 import { confirmLeave } from './ace/SaveBar';
+import { clearPaid, usePlayGate } from './ace/playground';
+import { PLAY_LABEL } from './screens/ChildHome';
 import { Overlays, askPin, fireConfetti } from './components/ui';
 import ChildHome from './screens/ChildHome';
 import Play from './screens/Play';
@@ -68,7 +70,13 @@ export default function App() {
     if (fallback) fallback.style.display = 'none';
   }, []);
 
-  const start = (k: RoundKind) => { setResume(null); setKind(k); setRoundKey(n => n + 1); setView('play'); };
+  // 놀이터 항목은 하루 2번 그냥, 그 뒤로는 별 1개 (규칙 11번)
+  const play = usePlayGate('hanja');
+  const begin = (k: RoundKind) => { setResume(null); setKind(k); setRoundKey(n => n + 1); setView('play'); };
+  const start = (k: RoundKind) => {
+    if (PLAY_LABEL[k]) play.gate(k, PLAY_LABEL[k], () => begin(k));
+    else { clearPaid('hanja'); begin(k); }
+  };
   const resumeRound = () => {
     const saved = loadRound();
     if (!saved) { setView('home'); return; }
@@ -98,6 +106,8 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {play.dialog}
 
       {/* 내 보상 (별 잔액·내 보상 카드·결과 화면의 별을 누르면) */}
       <AceRewardsSheet open={rewardsOpen && screen === 'child'} onClose={() => setRewardsOpen(false)} childName={name} subject="hanja" badges={BADGES} />

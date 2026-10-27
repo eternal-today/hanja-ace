@@ -5,6 +5,7 @@ import { Question, RoundItem, RoundKind, RoundRecord } from '../types';
 import { GROUP_BY_ID, HANJA, charsOfStage, hunEum } from '../data';
 import { Milestone, actions, getState, useStore } from '../engine/store';
 import { HINT_COST, useWallet } from '../ace/wallet';
+import { paidRound } from '../ace/playground';
 import { geminiKey } from '../ace/settings';
 import { answerText, examHunEum, freeHints, hintLines, isRight, nextQuestion, planRound, poolChars, questionText, shownAnswer, shuffle, wordsFor } from '../engine/quiz';
 import { StrokeChar, StrokeSteps, loadStrokes } from '../components/StrokeChar';
@@ -164,7 +165,9 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
     const total = finalItems.length;
     // 찍기 방지: 정답이 40%보다 적은 판은 별 없음 (아무거나 고르면 25~33%)
     const accOk = total === 0 || correct / total >= 0.4;
-    const stars = accOk ? Math.floor(correct / 5) : 0;
+    // 놀이터 무료 2번 뒤 별을 내고 한 판은 별 없음 (규칙 11번)
+    const paid = kind !== 'daily' && kind !== 'check' && paidRound('hanja', kind);
+    const stars = accOk && !paid ? Math.floor(correct / 5) : 0;
     const groupNames = [...new Set(finalItems.map(i => {
       const g = GROUP_BY_ID[HANJA[i.c]?.groupId];
       return g ? `${g.stage} ${g.name}` : '';
@@ -173,6 +176,7 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
       ts: Date.now(), date: new Date().toLocaleDateString('ko-KR'), kind, correct, total, stars,
       hintsFree: freeUsed, hintsPaid: paidUsed, groupNames, items: finalItems,
       ...(!accOk && Math.floor(correct / 5) > 0 ? { lowAcc: true } : {}),
+      ...(paid ? { paidPlay: true } : {}),
     };
     clearRound();
     const hit = actions.addRecord(rec);
@@ -390,6 +394,11 @@ export default function Play({ kind, onExit, onAgain, onMilestone, onOpenShop, r
                 <span className="text-amber-400 font-medium"> · 5문제 맞힐 때마다 별 1개</span>
               </p>
               <p className="text-[11px] font-bold text-amber-500 mt-0.5">모든 과목에서 모은 별을 함께 써요</p>
+              {record.paidPlay && (
+                <p className="text-xs font-black text-amber-700 mt-2 bg-white rounded-xl px-3 py-2">
+                  별을 내고 한 판이라 이번 판은 별이 없어요. 오늘의 한 판에서는 별을 받을 수 있어! ⭐
+                </p>
+              )}
               {record.lowAcc && (
                 <p className="text-xs font-black text-rose-500 mt-2 bg-white rounded-xl px-3 py-2">
                   10문제 중 4문제보다 적게 맞혀서 이번 판은 별이 없어요. 천천히 생각하고 고르면 별을 받을 수 있어! 💪

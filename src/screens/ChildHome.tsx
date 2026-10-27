@@ -7,6 +7,10 @@ import { BADGES, useStore } from '../engine/store';
 import { useWallet } from '../ace/wallet';
 import { AceNav } from '../ace/AceNav';
 import { AceRewardCards } from '../ace/Rewards';
+import { PlayBadge } from '../ace/playground';
+
+/** 골라 하는 놀이터 항목 이름 (하루 2번 그냥, 그 뒤로 별 1개) */
+export const PLAY_LABEL: Partial<Record<RoundKind, string>> = { hun: '뜻·소리 고르기', word: '낱말 읽기', listen: '듣고 고르기', write: '훈음 쓰기', order: '필순' };
 import { canSpeak, poolStatus } from '../engine/quiz';
 import { toneOf } from '../engine/srs';
 import { loadRound } from '../engine/resume';
@@ -114,6 +118,7 @@ export default function ChildHome({ onParent, onStart, onResume, onDogam, onRewa
                   className="bg-white border-2 border-slate-200 rounded-3xl p-4 flex flex-col items-center gap-2 text-brand-600 disabled:opacity-40">
                   {m.icon}
                   <span className="text-sm font-black text-slate-700 break-keep text-center">{m.label}</span>
+                  <PlayBadge subject="hanja" item={m.kind} />
                 </motion.button>
               ))}
             </div>
