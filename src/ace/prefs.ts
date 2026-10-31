@@ -3,7 +3,7 @@
  * ※ src/ace 폴더는 허브·수학·한자·영어·생각 다섯 저장소에 똑같이 들어 있음. 고치면 다섯 곳에 같이 복사.
  *
  * 맞추는 것: 한자·영어·생각 설정과 PIN, 생각 해설 PIN, 에이스 홈 PIN, AI 키(Gemini, 에이스 홈에 넣은 키)
- *   생각나무(이름·종류·숲 / 물은 '쌓기 기록'으로 기기마다 쌓은 것을 합침), 영어에서 부모님이 넣은 표현
+ *   생각나무(이름·종류·숲 / 물은 '쌓기 기록'으로 기기마다 쌓은 것을 합침), 생각 난이도·만난 유형·메달, 영어에서 부모님이 넣은 표현
  *   - 수학 설정·PIN은 수학 앱이 자기 동기화로 이미 맞춤 (여기서는 다루지 않음)
  *   - 한자 설정 안의 예전 AI 키(geminiKey)는 올리지 않음 (공통 키를 씀)
  * 방식: 항목마다 "마지막으로 고친 시각"을 두고, 서버와 비교해 더 나중에 고친 쪽이 이김.
@@ -35,9 +35,12 @@ const ITEMS: Item[] = [
   { id: 6, key: 'ace_gemini_key', type: 'secret' },
   { id: 7, key: 'thinking_config', type: 'json', weight: () => count('thinking_records') },
   { id: 8, key: 'thinking_parent_pin', type: 'text', weight: () => count('thinking_records') },
-  { id: 9, key: 'thinking_peek_pin', type: 'secret' },
+  { id: 9, key: 'thinking_peek_pin', type: 'secret' },   // 생각 에이스 '부모님 해설' PIN (정답이 보이므로 잠가서 올림)
   { id: 10, key: 'thinking_tree', type: 'json', strip: ['drops'], weight: () => count('thinking_records') },   // 생각나무 이름·종류·숲·심은 시각 (물은 아래 쌓기 기록)
-  { id: 11, key: 'english_custom_phrases', type: 'json', weight: () => count('english_records') },          // 영어: 부모님이 직접 넣은 표현   // 생각 에이스 '부모님 해설' PIN (정답이 보이므로 잠가서 올림)
+  { id: 11, key: 'english_custom_phrases', type: 'json', weight: () => count('english_records') },          // 영어: 부모님이 직접 넣은 표현
+  { id: 12, key: 'thinking_steps', type: 'json', weight: () => count('thinking_records') },    // 생각: 유형별 난이도 단계
+  { id: 13, key: 'thinking_seen', type: 'json', weight: () => count('thinking_records') },     // 생각: 만난 유형 (전략 카드로 소개한 것)
+  { id: 14, key: 'thinking_medals', type: 'json', weight: () => count('thinking_records') },   // 생각: 스무고개 메달
 ];
 const BY_ID = new Map(ITEMS.map(i => [i.id, i]));
 
