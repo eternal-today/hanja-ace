@@ -17,12 +17,13 @@ import {
   SyncProfile, readDirty, writeDirty, walletRecordFor, hanjaRecordFor, englishRecordFor, thinkingRecordFor, walletUpdatedAt,
   applyServerWallet, applyServerHanja, applyServerEnglish, applyServerThinking, applyServerMath, notifyWallet, onWalletDirty,
 } from './wallet';
-import { applyServerPrefs, initPrefs, prefsOutbox, prefsPendingCount, prefsSent, setPrefsHook } from './prefs';
+import { PREFS_VERSION, applyServerPrefs, initPrefs, prefsOutbox, prefsPendingCount, prefsSent, setPrefsHook } from './prefs';
 
 const KEY = {
   url: 'ace_sync_url', token: 'ace_sync_token',
   mathUrl: 'sync_url', mathToken: 'sync_token',   // 수학 앱의 연결 정보
   lastAt: 'ace_sync_last_at',
+  prefsVer: 'ace_prefs_known_ver',   // 이 기기가 다 받은 부모님 설정 항목 판 번호 (prefs.ts PREFS_VERSION)
   cursor: (p: string) => `ace_sync_cursor_${p}`,
 };
 
@@ -141,11 +142,14 @@ async function syncProfile(cfg: { url: string; token: string }, p: Profile) {
 /** 부모님 설정 동기화 (prefs.ts) */
 async function syncPrefs(cfg: { url: string; token: string }) {
   const { records, sent } = await prefsOutbox(cfg.token);
-  const since = Number(localStorage.getItem(KEY.cursor('prefs')) || 0);
+  // 아는 항목이 늘었으면 처음부터 다시 받음 (예전 코드가 건너뛴 항목을 이제 받기 위해. 같은 값은 시각 비교로 걸러짐)
+  const known = Number(localStorage.getItem(KEY.prefsVer) || 0);
+  const since = known < PREFS_VERSION ? 0 : Number(localStorage.getItem(KEY.cursor('prefs')) || 0);
   const res = await post(cfg.url, { action: 'sync', token: cfg.token, profileId: 'prefs', since, records: records.map(r => ({ ...r, profileId: 'prefs' })) });
   prefsSent(sent);
   await applyServerPrefs(Array.isArray(res.records) ? res.records : [], cfg.token);
   localStorage.setItem(KEY.cursor('prefs'), String(res.seq || since));
+  localStorage.setItem(KEY.prefsVer, String(PREFS_VERSION));
 }
 
 let opts = { pullMath: true };
