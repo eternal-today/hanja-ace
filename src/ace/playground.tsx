@@ -4,7 +4,9 @@
  *
  *  - "골라 하는 놀이터"의 항목마다(예: 스무고개) 하루 2번은 그냥 풀 수 있음. 하루는 0시에 다시 시작.
  *  - 3번째부터는 시작할 때마다 별 1개 (공통 장부 kind 'play'). 별이 모자라면 시작할 수 없음.
- *  - 별을 내고 푼 판은 별(생각 에이스는 물)을 받지 않음.
+ *  - 또는 [부모님 허락받기]: 에이스 홈 PIN을 넣으면 별 없이 한 번 더 (과목 앱 PIN은 아이가 알 수 있어 쓰지 않음).
+ *    PIN을 3번 틀리면 창이 닫힘 (다시 열면 처음부터).
+ *  - 별을 내고 푼 판과 허락받은 판은 별(생각 에이스는 물)을 받지 않음.
  *  - "오늘의 한 판"은 제한 없음.
  *  - 횟수는 기기 안에만 셈 (낸 별은 공통 장부라 다른 기기와 맞춰짐).
  *
@@ -17,10 +19,11 @@
  */
 import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Star } from 'lucide-react';
-import { PLAY_COST, Subject, spendPlay, useWallet } from './wallet';
+import { Delete, Lock, Star } from 'lucide-react';
+import { PLAY_COST, Subject, hubPin, spendPlay, useWallet } from './wallet';
 
 export const FREE_PLAYS = 2;
+const MAX_MISSES = 3;   // 부모님 허락 PIN을 이만큼 틀리면 창을 닫음
 const LOG = 'ace_play_log';     // { "hanja:hun": [시작 시각, …] } 최근 사흘만 남김
 const PAID = 'ace_play_paid';   // { hanja: "hun" } 별을 내고 시작한 판 (끝나거나 다음 판을 시작하면 지움)
 
@@ -73,43 +76,100 @@ export function PlayBadge({ subject, item, className = '' }: { subject: Subject;
 export function usePlayGate(subject: Subject) {
   const w = useWallet();
   const [ask, setAsk] = useState<{ item: string; label: string; go: () => void } | null>(null);
+  const [pinMode, setPinMode] = useState(false);   // 부모님 허락: 에이스 홈 PIN 넣는 중
+  const [buf, setBuf] = useState('');
+  const [wrong, setWrong] = useState(false);
+  const [misses, setMisses] = useState(0);   // 틀린 횟수. 3번 틀리면 창을 닫음 (계속 눌러 맞히지 못하게)
+  const close = () => { setAsk(null); setPinMode(false); setBuf(''); setWrong(false); setMisses(0); };
 
   const gate = (item: string, label: string, go: () => void) => {
     if (freeLeft(subject, item) > 0) { recordStart(subject, item, false); go(); return; }
+    setPinMode(false); setBuf(''); setWrong(false); setMisses(0);
     setAsk({ item, label, go });
+  };
+  /** 허락받은 판: 별을 내지 않고 시작. 별을 내고 푼 판처럼 이 판은 별·물 없음 */
+  const allow = () => {
+    if (!ask) return;
+    recordStart(subject, ask.item, true);
+    const go = ask.go;
+    close();
+    go();
+  };
+  const press = (n: number) => {
+    if (wrong || buf.length >= 4) return;
+    const next = buf + n;
+    setBuf(next);
+    if (next.length < 4) return;
+    if (next === hubPin()) allow();
+    else {
+      const m = misses + 1;
+      setMisses(m);
+      setWrong(true);
+      setTimeout(() => { if (m >= MAX_MISSES) close(); else { setBuf(''); setWrong(false); } }, 900);
+    }
   };
   const pay = () => {
     if (!ask) return;
     if (!spendPlay(subject, ask.label)) return;
     recordStart(subject, ask.item, true);
     const go = ask.go;
-    setAsk(null);
+    close();
     go();
   };
+  const hasHubPin = !!hubPin();
   const enough = w.balance >= PLAY_COST;
 
   const dialog = (
     <AnimatePresence>
       {ask && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setAsk(null)}>
+          className="fixed inset-0 z-[110] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-6" onClick={close}>
           <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }}
             onClick={e => e.stopPropagation()}
             className="bg-white rounded-[2rem] p-7 w-full max-w-sm text-center shadow-2xl space-y-4">
-            <div className="text-5xl">🎟️</div>
-            <h3 className="text-xl font-black text-slate-900 break-keep">오늘 ‘{ask.label}’은 {FREE_PLAYS}번 다 했어요</h3>
-            <p className="text-sm text-slate-500 font-medium break-keep leading-relaxed">
-              별 {PLAY_COST}개를 내면 한 번 더 할 수 있어요.<br />이번 판은 별을 받지 않아요. 내일이 되면 다시 {FREE_PLAYS}번 그냥 할 수 있어요.
-            </p>
-            <div className="text-sm font-bold text-amber-700 bg-amber-50 rounded-xl py-2 flex items-center justify-center gap-1.5">
-              <Star size={16} className="fill-amber-500 text-amber-500" />지금 가진 별 {w.balance}개
-            </div>
-            {!enough && <p className="text-xs font-bold text-rose-500">별이 모자라요. 오늘의 한 판으로 별을 모아 보세요!</p>}
-            <div className="flex gap-2">
-              <button onClick={() => setAsk(null)} className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-600 font-black active:scale-95 transition-transform">다음에 할게요</button>
-              <button onClick={pay} disabled={!enough}
-                className="flex-1 py-3.5 rounded-2xl bg-amber-500 text-white font-black active:scale-95 transition-transform disabled:opacity-40">별 {PLAY_COST}개 내기</button>
-            </div>
+            {!pinMode ? (
+              <>
+                <div className="text-5xl">🎟️</div>
+                <h3 className="text-xl font-black text-slate-900 break-keep">오늘 ‘{ask.label}’은 {FREE_PLAYS}번 다 했어요</h3>
+                <p className="text-sm text-slate-500 font-medium break-keep leading-relaxed">
+                  별 {PLAY_COST}개를 내거나 부모님께 허락받으면 한 번 더 할 수 있어요.<br />이번 판은 별을 받지 않아요. 내일이 되면 다시 {FREE_PLAYS}번 그냥 할 수 있어요.
+                </p>
+                <div className="text-sm font-bold text-amber-700 bg-amber-50 rounded-xl py-2 flex items-center justify-center gap-1.5">
+                  <Star size={16} className="fill-amber-500 text-amber-500" />지금 가진 별 {w.balance}개
+                </div>
+                {!enough && <p className="text-xs font-bold text-rose-500">별이 모자라요. 오늘의 한 판으로 별을 모아 보세요!</p>}
+                <div className="flex gap-2">
+                  <button onClick={close} className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-600 font-black active:scale-95 transition-transform">다음에 할게요</button>
+                  <button onClick={pay} disabled={!enough}
+                    className="flex-1 py-3.5 rounded-2xl bg-amber-500 text-white font-black active:scale-95 transition-transform disabled:opacity-40">별 {PLAY_COST}개 내기</button>
+                </div>
+                <button onClick={() => setPinMode(true)} disabled={!hasHubPin}
+                  className="w-full py-3 rounded-2xl border-2 border-slate-200 text-slate-600 font-black flex items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-50">
+                  <Lock size={16} className="text-slate-400" />부모님 허락받기
+                </button>
+                {!hasHubPin && <p className="text-[11px] font-bold text-slate-400 break-keep">부모님 허락은 에이스 홈 PIN으로 해요. 에이스 홈 부모님 화면에서 PIN을 먼저 만들어 주세요.</p>}
+              </>
+            ) : (
+              <>
+                <div className="w-14 h-14 bg-slate-100 rounded-2xl mx-auto flex items-center justify-center"><Lock size={26} className="text-slate-400" /></div>
+                <h3 className="text-xl font-black text-slate-900">부모님 허락</h3>
+                <p className="text-sm text-slate-400 font-medium break-keep">에이스 홈 PIN을 넣으면 ‘{ask.label}’을 별 없이 한 번 더 할 수 있어요</p>
+                <div className="flex justify-center gap-4 py-1">
+                  {[0, 1, 2, 3].map(i => (
+                    <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all ${buf.length > i ? 'bg-slate-700 border-slate-700' : 'border-slate-200'}`} />
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                    <button key={n} onClick={() => press(n)} className="py-3 bg-slate-50 rounded-2xl text-xl font-black text-slate-700 active:bg-slate-200 select-none">{n}</button>
+                  ))}
+                  <button onClick={() => { setPinMode(false); setBuf(''); }} className="py-3 text-sm font-bold text-slate-400">뒤로</button>
+                  <button onClick={() => press(0)} className="py-3 bg-slate-50 rounded-2xl text-xl font-black text-slate-700 active:bg-slate-200 select-none">0</button>
+                  <button onClick={() => setBuf(b => b.slice(0, -1))} aria-label="지우기" className="py-3 flex items-center justify-center text-slate-400"><Delete size={20} /></button>
+                </div>
+                {wrong && <p className="text-sm font-bold text-rose-500">{misses >= MAX_MISSES ? 'PIN을 3번 틀렸어요. 부모님께 직접 부탁해 주세요' : `PIN 번호가 올바르지 않아요 (${misses}/${MAX_MISSES})`}</p>}
+              </>
+            )}
           </motion.div>
         </motion.div>
       )}
